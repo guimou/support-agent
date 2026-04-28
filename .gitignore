@@ -39,6 +39,9 @@ htmlcov/
 *.swo
 *~
 
+# direnv
+.direnv/
+
 # Environment
 .env
 .env.local

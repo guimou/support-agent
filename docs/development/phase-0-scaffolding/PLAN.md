@@ -24,7 +24,7 @@ Phase 0 creates the project scaffolding — no business logic, just the skeleton
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Python version | 3.12 (`>=3.12,<3.14`) | Intersection of Letta SDK (3.11-3.13), NeMo Guardrails (3.10-3.13), FastAPI (3.10+) |
+| Python version | 3.12 (`>=3.12,<3.14`) | Intersection of Letta SDK (3.11-3.13), NeMo Guardrails (3.10-3.12), FastAPI (3.10+) |
 | Package manager | `uv` | Fast, lockfiles, clean pyproject.toml integration |
 | Build backend | `hatchling` | Lightweight, modern, src-layout native |
 | Linting/formatting | `ruff` | Replaces black + flake8 + isort in one fast tool |
@@ -45,7 +45,7 @@ Phase 0 creates the project scaffolding — no business logic, just the skeleton
 ```toml
 [build-system]
 requires = ["hatchling"]
-build-backend = "hatchling.backends"
+build-backend = "hatchling.build"
 
 [project]
 name = "litemaas-agent"
@@ -62,7 +62,7 @@ dependencies = [
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.14,<3",
     "letta-client>=1.10,<2",
-    "nemoguardrails>=0.21,<1",
+    "nemoguardrails>=0.17,<1",
 ]
 
 [project.optional-dependencies]
@@ -73,7 +73,7 @@ dev = [
     "httpx",
     "mypy>=1.15,<2",
     "ruff>=0.15,<1",
-    "types-pyjwt>=1.7",
+    "types-pyjwt",
 ]
 
 [tool.ruff]
@@ -145,7 +145,40 @@ Pins the dev Python version for `uv` and other tools.
 
 ---
 
-### Step 3 — Source Tree
+### Step 3 — `.envrc` (direnv)
+
+**Create**: `/workspace/.envrc`
+
+```bash
+# Activate Python venv managed by uv.
+# Requires direnv: https://direnv.net
+#
+# First-time setup:
+#   direnv allow
+
+# Create venv if it doesn't exist
+if [ ! -d .venv ]; then
+    echo "direnv: creating venv with uv..."
+    uv venv
+fi
+
+# Activate the venv
+source .venv/bin/activate
+
+# Load .env if present
+dotenv_if_exists
+```
+
+**Notes**:
+- [direnv](https://direnv.net) automatically activates the venv on `cd` into the project and deactivates on `cd` out.
+- If `.venv/` doesn't exist yet, it creates one via `uv venv` on first entry.
+- `dotenv_if_exists` loads `.env` variables into the shell (useful for local dev without compose).
+- `.envrc` is committed; `.direnv/` is gitignored.
+- First-time setup requires `direnv allow` to trust the file.
+
+---
+
+### Step 4 — Source Tree
 
 Create all directories and files below. All `__init__.py` files are **empty** (no imports, no `__all__`).
 
@@ -352,7 +385,7 @@ async def health() -> dict[str, str]:
 
 ---
 
-### Step 4 — Test Scaffolding
+### Step 5 — Test Scaffolding
 
 **Create**: `tests/__init__.py` — Empty file.
 
@@ -425,7 +458,7 @@ Mark all tests in this directory with @pytest.mark.guardrails.
 
 ---
 
-### Step 5 — `.env.example`
+### Step 6 — `.env.example`
 
 **Create**: `/workspace/.env.example`
 
@@ -488,7 +521,7 @@ JWT_SECRET=
 
 ---
 
-### Step 6 — `Containerfile`
+### Step 7 — `Containerfile`
 
 **Create**: `/workspace/Containerfile`
 
@@ -506,12 +539,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock* ./
+COPY src/ ./src/
 
 RUN uv venv /opt/venv && \
     . /opt/venv/bin/activate && \
     uv pip install --no-cache .
-
-COPY src/ ./src/
 
 # Stage 2: Runtime — slim image with only what's needed
 FROM python:3.12-slim AS runtime
@@ -542,6 +574,7 @@ CMD ["uvicorn", "proxy.server:app", "--host", "0.0.0.0", "--port", "8400"]
 **Notes**:
 - Multi-stage build: builder installs deps (including C++ compilation), runtime copies only the venv and source.
 - `build-essential` is only in the builder stage — runtime stays slim.
+- `src/` is copied before `uv pip install .` because hatchling needs it to discover packages.
 - `uv.lock*` glob: works whether or not the lockfile exists yet.
 - Non-root `agent` user (UID 1001) for security.
 - `PYTHONPATH=/app/src` is required for src-layout package discovery.
@@ -549,7 +582,7 @@ CMD ["uvicorn", "proxy.server:app", "--host", "0.0.0.0", "--port", "8400"]
 
 ---
 
-### Step 7 — `compose.yaml`
+### Step 8 — `compose.yaml`
 
 **Create**: `/workspace/compose.yaml`
 
@@ -604,7 +637,7 @@ volumes:
 
 ---
 
-### Step 8 — Deployment Stubs
+### Step 9 — Deployment Stubs
 
 **Create**: `/workspace/deployment/helm/.gitkeep` — Empty file.
 **Create**: `/workspace/deployment/kustomize/.gitkeep` — Empty file.
@@ -613,7 +646,7 @@ These directories are populated in Phase 3D.
 
 ---
 
-### Step 9 — Script Stubs
+### Step 10 — Script Stubs
 
 **Create**: `/workspace/scripts/seed-knowledge.py`
 
@@ -668,7 +701,7 @@ if __name__ == "__main__":
 
 ---
 
-### Step 10 — CI Pipeline
+### Step 11 — CI Pipeline
 
 **Create**: `/workspace/.github/workflows/ci.yml`
 
@@ -696,10 +729,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Ruff check
         run: uv run ruff check src/ tests/
@@ -718,10 +751,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Mypy
         run: uv run mypy src/
@@ -737,10 +770,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Run unit tests
         run: uv run pytest tests/unit/ -v --tb=short
@@ -748,29 +781,32 @@ jobs:
 
 **Notes**:
 - Three parallel jobs for fast feedback.
-- `astral-sh/setup-uv@v6` is the official action with built-in caching.
-- `uv sync --group dev` installs all deps including dev tools.
+- `astral-sh/setup-uv@v5` is the official action with built-in caching.
+- `uv sync --extra dev` installs all deps including dev tools.
 - Only `tests/unit/` runs in CI — integration and guardrail tests need live services.
 
 ---
 
-### Step 11 — Update `.gitignore`
+### Step 12 — Update `.gitignore`
 
-**Modify**: `/workspace/.gitignore` — Add this entry:
+**Modify**: `/workspace/.gitignore` — Add these entries:
 
 ```
 # Ruff
 .ruff_cache/
+
+# direnv
+.direnv/
 ```
 
 ---
 
-### Step 12 — Generate Lock File
+### Step 13 — Generate Lock File
 
 After all files are created, run:
 
 ```bash
-uv sync --group dev
+uv sync --extra dev
 ```
 
 This generates `uv.lock` which should be committed to the repository for reproducible builds.
@@ -783,49 +819,50 @@ This generates `uv.lock` which should be committed to the repository for reprodu
 |---|---|---|---|
 | 1 | `pyproject.toml` | Config | Full project config (see Step 1) |
 | 2 | `.python-version` | Config | `3.12` |
-| 3 | `src/agent/__init__.py` | Python | Empty |
-| 4 | `src/agent/config.py` | Python | `Settings` class (pydantic-settings) |
-| 5 | `src/agent/bootstrap.py` | Python | Docstring stub |
-| 6 | `src/agent/persona.py` | Python | Docstring stub |
-| 7 | `src/agent/memory_seeds.py` | Python | Docstring stub |
-| 8 | `src/tools/__init__.py` | Python | Empty |
-| 9 | `src/tools/litemaas.py` | Python | Docstring stub |
-| 10 | `src/tools/litellm.py` | Python | Docstring stub |
-| 11 | `src/tools/admin.py` | Python | Docstring stub |
-| 12 | `src/tools/docs.py` | Python | Docstring stub |
-| 13 | `src/guardrails/__init__.py` | Python | Empty |
-| 14 | `src/guardrails/rails.py` | Python | Docstring stub |
-| 15 | `src/guardrails/actions.py` | Python | Docstring stub |
-| 16 | `src/guardrails/config/config.yml` | YAML | Minimal NeMo config |
-| 17 | `src/guardrails/config/topics.co` | Colang | Comment stub |
-| 18 | `src/guardrails/config/privacy.co` | Colang | Comment stub |
-| 19 | `src/guardrails/config/safety.co` | Colang | Comment stub |
-| 20 | `src/guardrails/config/prompts.yml` | YAML | Comment stub |
-| 21 | `src/proxy/__init__.py` | Python | Empty |
-| 22 | `src/proxy/server.py` | Python | FastAPI app + `/v1/health` |
-| 23 | `src/proxy/auth.py` | Python | Docstring stub |
-| 24 | `src/proxy/routes.py` | Python | Docstring stub |
-| 25 | `src/adapters/__init__.py` | Python | Empty |
-| 26 | `src/adapters/base.py` | Python | Docstring stub |
-| 27 | `src/adapters/litemaas.py` | Python | Docstring stub |
-| 28 | `tests/__init__.py` | Python | Empty |
-| 29 | `tests/unit/__init__.py` | Python | Empty |
-| 30 | `tests/unit/conftest.py` | Python | `client` fixture |
-| 31 | `tests/unit/test_health.py` | Python | Health endpoint tests |
-| 32 | `tests/integration/__init__.py` | Python | Empty |
-| 33 | `tests/integration/conftest.py` | Python | Placeholder with docstring |
-| 34 | `tests/guardrails/__init__.py` | Python | Empty |
-| 35 | `tests/guardrails/conftest.py` | Python | Placeholder with docstring |
-| 36 | `.env.example` | Config | All env vars documented |
-| 37 | `Containerfile` | Container | Multi-stage build |
-| 38 | `compose.yaml` | Config | proxy + Letta services |
-| 39 | `deployment/helm/.gitkeep` | Marker | Empty |
-| 40 | `deployment/kustomize/.gitkeep` | Marker | Empty |
-| 41 | `scripts/seed-knowledge.py` | Python | Stub with `NotImplementedError` |
-| 42 | `scripts/export-knowledge.py` | Python | Stub with `NotImplementedError` |
-| 43 | `.github/workflows/ci.yml` | YAML | CI pipeline |
+| 3 | `.envrc` | Config | direnv venv auto-activation |
+| 4 | `src/agent/__init__.py` | Python | Empty |
+| 5 | `src/agent/config.py` | Python | `Settings` class (pydantic-settings) |
+| 6 | `src/agent/bootstrap.py` | Python | Docstring stub |
+| 7 | `src/agent/persona.py` | Python | Docstring stub |
+| 8 | `src/agent/memory_seeds.py` | Python | Docstring stub |
+| 9 | `src/tools/__init__.py` | Python | Empty |
+| 10 | `src/tools/litemaas.py` | Python | Docstring stub |
+| 11 | `src/tools/litellm.py` | Python | Docstring stub |
+| 12 | `src/tools/admin.py` | Python | Docstring stub |
+| 13 | `src/tools/docs.py` | Python | Docstring stub |
+| 14 | `src/guardrails/__init__.py` | Python | Empty |
+| 15 | `src/guardrails/rails.py` | Python | Docstring stub |
+| 16 | `src/guardrails/actions.py` | Python | Docstring stub |
+| 17 | `src/guardrails/config/config.yml` | YAML | Minimal NeMo config |
+| 18 | `src/guardrails/config/topics.co` | Colang | Comment stub |
+| 19 | `src/guardrails/config/privacy.co` | Colang | Comment stub |
+| 20 | `src/guardrails/config/safety.co` | Colang | Comment stub |
+| 21 | `src/guardrails/config/prompts.yml` | YAML | Comment stub |
+| 22 | `src/proxy/__init__.py` | Python | Empty |
+| 23 | `src/proxy/server.py` | Python | FastAPI app + `/v1/health` |
+| 24 | `src/proxy/auth.py` | Python | Docstring stub |
+| 25 | `src/proxy/routes.py` | Python | Docstring stub |
+| 26 | `src/adapters/__init__.py` | Python | Empty |
+| 27 | `src/adapters/base.py` | Python | Docstring stub |
+| 28 | `src/adapters/litemaas.py` | Python | Docstring stub |
+| 29 | `tests/__init__.py` | Python | Empty |
+| 30 | `tests/unit/__init__.py` | Python | Empty |
+| 31 | `tests/unit/conftest.py` | Python | `client` fixture |
+| 32 | `tests/unit/test_health.py` | Python | Health endpoint tests |
+| 33 | `tests/integration/__init__.py` | Python | Empty |
+| 34 | `tests/integration/conftest.py` | Python | Placeholder with docstring |
+| 35 | `tests/guardrails/__init__.py` | Python | Empty |
+| 36 | `tests/guardrails/conftest.py` | Python | Placeholder with docstring |
+| 37 | `.env.example` | Config | All env vars documented |
+| 38 | `Containerfile` | Container | Multi-stage build |
+| 39 | `compose.yaml` | Config | proxy + Letta services |
+| 40 | `deployment/helm/.gitkeep` | Marker | Empty |
+| 41 | `deployment/kustomize/.gitkeep` | Marker | Empty |
+| 42 | `scripts/seed-knowledge.py` | Python | Stub with `NotImplementedError` |
+| 43 | `scripts/export-knowledge.py` | Python | Stub with `NotImplementedError` |
+| 44 | `.github/workflows/ci.yml` | YAML | CI pipeline |
 
-**Modified**: `.gitignore` — add `.ruff_cache/` entry.
+**Modified**: `.gitignore` — add `.ruff_cache/` and `.direnv/` entries.
 
 **Generated**: `uv.lock` — created by `uv sync`, committed to repo.
 
@@ -839,7 +876,7 @@ This generates `uv.lock` which should be committed to the repository for reprodu
 
 ### `uv.lock` must be committed
 
-The lockfile is generated on first `uv sync --group dev` and must be committed. It ensures CI and container builds get exactly the same dependency versions.
+The lockfile is generated on first `uv sync --extra dev` and must be committed. It ensures CI and container builds get exactly the same dependency versions.
 
 ### `PYTHONPATH` in development vs. container
 
@@ -848,11 +885,11 @@ The lockfile is generated on first `uv sync --group dev` and must be committed. 
 
 ### Mypy strict mode
 
-All Python files (including stubs) must include:
+Python files with functions must include:
 - `from __future__ import annotations` at the top
 - Type annotations on all function signatures
 
-This applies even to one-line docstring stubs. Files with only a module docstring and no functions don't need annotations.
+Files with only a module docstring and no functions need neither the import nor annotations.
 
 ### Health endpoint independence
 
@@ -870,7 +907,7 @@ Run these checks in order after implementation:
 
 ```bash
 # 1. Install dependencies
-uv sync --group dev
+uv sync --extra dev
 
 # 2. Lint
 uv run ruff check src/ tests/
