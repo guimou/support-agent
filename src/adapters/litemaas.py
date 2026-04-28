@@ -1,0 +1,1 @@
+"""LiteMaaS-specific adapter implementation."""

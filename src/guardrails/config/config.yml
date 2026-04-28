@@ -1,0 +1,8 @@
+# NeMo Guardrails configuration
+# See: https://docs.nvidia.com/nemo/guardrails/
+models: []
+rails:
+  input:
+    flows: []
+  output:
+    flows: []

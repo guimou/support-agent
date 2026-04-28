@@ -1,0 +1,41 @@
+# Local development: podman-compose up
+# Production: use Helm chart in deployment/helm/
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Containerfile
+    ports:
+      - "8400:8400"
+    environment:
+      - LETTA_SERVER_URL=http://letta:8283
+      - LITEMAAS_API_URL=http://host.containers.internal:8081
+      - LITELLM_API_URL=http://host.containers.internal:4000
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
+      - LITELLM_USER_API_KEY=${LITELLM_USER_API_KEY}
+      - AGENT_MODEL=${AGENT_MODEL}
+      - GUARDRAILS_MODEL=${GUARDRAILS_MODEL}
+      - JWT_SECRET=${JWT_SECRET}
+      - PROXY_PORT=8400
+      - LOG_LEVEL=debug
+      - RATE_LIMIT_RPM=30
+      - RATE_LIMIT_MEMORY_WRITES_PER_HOUR=20
+    depends_on:
+      letta:
+        condition: service_started
+    restart: unless-stopped
+
+  letta:
+    image: letta/letta:latest
+    ports:
+      - "8283:8283"
+    environment:
+      - OPENAI_API_BASE=http://host.containers.internal:4000
+      - OPENAI_API_KEY=${LITELLM_API_KEY}
+    volumes:
+      - letta-data:/data
+    restart: unless-stopped
+
+volumes:
+  letta-data:
