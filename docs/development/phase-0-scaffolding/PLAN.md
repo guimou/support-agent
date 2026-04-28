@@ -930,13 +930,13 @@ podman build -t litemaas-agent -f Containerfile .
 
 # 7. Container run + health check
 podman run --rm -d -p 8400:8400 --name agent-test litemaas-agent
-curl -s http://localhost:8400/v1/health
+curl -s http://127.0.0.1:8400/v1/health
 # Expected: {"status":"healthy"}
 podman stop agent-test
 
 # 8. Full stack
 podman-compose up -d
-curl -s http://localhost:8400/v1/health
+curl -s http://127.0.0.1:8400/v1/health
 # Expected: {"status":"healthy"}
 podman-compose down
 ```

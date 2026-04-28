@@ -15,7 +15,9 @@ This plan is organized into phases that build on each other. Each phase produces
 
 ---
 
-## Phase 0 — Project Scaffolding
+## Phase 0 — Project Scaffolding ✅
+
+**Status**: Complete (2026-04-28)
 
 **Goal**: Bootable project with dev environment, CI, and empty module structure.
 
@@ -199,7 +201,7 @@ This plan is organized into phases that build on each other. Each phase produces
 
 | Phase | Focus | Depends On |
 |---|---|---|
-| **0 — Scaffolding** | Project setup, dev environment | Nothing |
+| **0 — Scaffolding** ✅ | Project setup, dev environment | Nothing |
 | **1 — Foundation** | Agent + tools + auth + basic guardrails | Phase 0, Letta image, LiteLLM models |
 | **2 — Integration** | Streaming, frontend widget, admin tools | Phase 1, LiteMaaS backend/frontend changes |
 | **3 — Hardening** | Privacy rails, security testing, deployment | Phase 2 |
