@@ -47,6 +47,9 @@ Phase 0 creates the project scaffolding — no business logic, just the skeleton
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent", "src/tools", "src/guardrails", "src/proxy", "src/adapters"]
+
 [project]
 name = "litemaas-agent"
 version = "0.1.0"
@@ -126,6 +129,7 @@ markers = [
 ```
 
 **Notes**:
+- `[tool.hatch.build.targets.wheel] packages` explicitly lists all top-level packages under `src/`. Without this, hatchling's default discovery would look for a package matching the project name (`litemaas_agent`) and find nothing.
 - `httpx` appears in both main and dev dependencies — production uses it for HTTP calls; dev needs it for `FastAPI.TestClient`.
 - `letta-client` is the Python SDK for Letta's HTTP API. The `letta` package is the full server — we don't need that in the proxy container.
 - `mypy` overrides silence missing import errors for `letta_client` and `nemoguardrails` which may lack complete type stubs.
@@ -364,7 +368,7 @@ async def health() -> dict[str, str]:
 **Create**: `src/proxy/routes.py`
 
 ```python
-"""API route definitions for /v1/chat, /v1/chat/stream, /v1/health."""
+"""API route definitions for /v1/chat and /v1/chat/stream."""
 ```
 
 #### `src/adapters/`
@@ -710,9 +714,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
