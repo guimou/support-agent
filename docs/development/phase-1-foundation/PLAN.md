@@ -1450,14 +1450,16 @@ async def chat(
     assistant_message = _extract_assistant_message(letta_response)
 
     # 6. Output guardrails
+    output_blocked = False
     if guardrails is not None:
         output_result = await guardrails.check_output(assistant_message, user)
         assistant_message = output_result.response
+        output_blocked = output_result.blocked
 
     return ChatResponse(
         message=assistant_message,
         conversation_id=conversation_id,
-        blocked=False,
+        blocked=output_blocked,
     )
 
 
@@ -1558,7 +1560,7 @@ class AgentState:
         )
         if convs and hasattr(convs, "__iter__"):
             for conv in convs:
-                if conv.summary and summary_key in conv.summary:
+                if conv.summary == summary_key:
                     self._conversation_cache[user_id] = conv.id
                     return conv.id
 
@@ -1587,7 +1589,7 @@ class AgentState:
         summary_key = f"litemaas-user:{user_id}"
         try:
             conv = self.client.conversations.retrieve(conversation_id)
-            if conv.summary and summary_key in conv.summary:
+            if conv.summary == summary_key:
                 self._conversation_cache[user_id] = conversation_id
                 return True
         except Exception:
