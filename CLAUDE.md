@@ -58,8 +58,8 @@ These MUST be enforced in all code. Never compromise on these:
 
 1. **Tools are read-only** — only `GET` requests, no mutations
 2. **`user_id` comes from JWT, never from LLM** — tools read `os.getenv("LETTA_USER_ID")`, never accept `user_id` as a function parameter
-3. **Admin tools are role-gated** — only registered on conversations where JWT role is `admin`; also validate role in each admin tool (defense-in-depth)
-4. **Scoped tokens** — standard tools use `LITELLM_USER_API_KEY` (read-only); admin tools use `LITELLM_API_KEY` (master key, only in admin conversations)
+3. **Admin tools are role-gated** — all tools (standard + admin) registered on a single shared agent; admin tools validate `LETTA_USER_ROLE == "admin"` at runtime (defense-in-depth, since Letta cannot do per-conversation tool registration)
+4. **Scoped tokens** — standard tools use `LITELLM_USER_API_KEY` (read-only); admin tools use `LITELLM_API_KEY` (master key, injected only for admin requests)
 5. **Memory writes are PII-audited** — hook inspects every `core_memory_append` / `archival_memory_insert` for PII before commit
 6. **Guardrails fail closed** — uncertain classifications are refused, not allowed
 
