@@ -6,12 +6,7 @@ Standalone AI agent that acts as an intelligent **platform support assistant** f
 
 **Status**: Phase 1 (Foundation) complete — proxy, guardrails, tools, and agent bootstrap implemented.
 
-Key documents:
-- `docs/index.md` — Documentation navigation hub
-- `docs/architecture/overview.md` — System architecture
-- `docs/architecture/security.md` — Security model and invariants
-- `docs/reference/tools.md` — Tool catalog
-- `docs/reference/guardrails.md` — Guardrails reference
+**Documentation**: `docs/index.md` is the navigation hub. Start there for architecture, reference, and guides.
 
 ## Architecture
 
@@ -24,36 +19,7 @@ Key documents:
 
 Request flow: `LiteMaaS Backend → Proxy (auth + input rails) → Letta (reasoning + tools) → Proxy (output rails) → LiteMaaS Backend`
 
-## Tech Stack
-
-- **Language**: Python (agent), TypeScript (LiteMaaS integration)
-- **Agent runtime**: Letta (formerly MemGPT) — stateful agent with self-editing memory
-- **Guardrails**: NVIDIA NeMo Guardrails — embedded as Python library, uses Colang rules
-- **Proxy**: FastAPI with SSE streaming
-- **Frontend widget**: PatternFly 6, `@patternfly/chatbot` component
-- **Auth**: JWT (HS256 for PoC, RS256 for production)
-- **Models**: Multi-model via LiteLLM — `AGENT_MODEL` (reasoning) + `GUARDRAILS_MODEL` (fast classification). **Naming**: Letta requires a provider prefix (`provider/model-name`), but guardrails call the LLM provider directly and use the plain model name.
-
-## Project Structure (Target)
-
-```
-src/
-├── agent/              # Agent config, bootstrap, persona, memory seeds
-├── tools/              # Read-only tools (LiteMaaS, LiteLLM, admin, docs)
-├── guardrails/         # NeMo Guardrails: rails.py, config/ (Colang .co files), actions.py
-├── proxy/              # FastAPI server, JWT auth, routes
-└── adapters/           # Platform-specific adapters (reusability layer)
-tests/
-├── unit/
-├── integration/
-└── guardrails/         # Adversarial prompt + privacy test scenarios
-deployment/
-├── helm/
-└── kustomize/
-scripts/
-├── seed-knowledge.py
-└── export-knowledge.py
-```
+Details: `docs/architecture/overview.md`
 
 ## Security Invariants (Non-Negotiable)
 
@@ -61,10 +27,12 @@ These MUST be enforced in all code. Never compromise on these:
 
 1. **Tools are read-only** — only `GET` requests, no mutations
 2. **`user_id` comes from JWT, never from LLM** — tools read `os.getenv("LETTA_USER_ID")`, never accept `user_id` as a function parameter
-3. **Admin tools are role-gated** — all tools (standard + admin) registered on a single shared agent; admin tools validate `LETTA_USER_ROLE == "admin"` at runtime (defense-in-depth, since Letta cannot do per-conversation tool registration)
+3. **Admin tools are role-gated** — all tools registered on a single shared agent; admin tools validate `LETTA_USER_ROLE == "admin"` at runtime (defense-in-depth)
 4. **Scoped tokens** — standard tools use `LITELLM_USER_API_KEY` (read-only); admin tools use `LITELLM_API_KEY` (master key, injected only for admin requests)
 5. **Memory writes are PII-audited** — hook inspects every `core_memory_append` / `archival_memory_insert` for PII before commit
 6. **Guardrails fail closed** — uncertain classifications are refused, not allowed
+
+Details: `docs/architecture/security.md`
 
 ## Key Patterns
 
@@ -82,72 +50,11 @@ def my_tool(param: str) -> str:
     return format_result(response.json())
 ```
 
-Tool dependencies must be available in Letta's Python environment. Prefer stdlib or libraries already in `letta/letta` image.
+Details: `docs/reference/tools.md`
 
-### Memory Architecture
+### Model Naming
 
-- **Core Memory** (in-context, SHARED) — persona, knowledge, patterns blocks. Never store user-specific info here.
-- **Recall Memory** (searchable, PER-USER) — conversation history scoped by conversation ID.
-- **Archival Memory** (vector store, SHARED) — documentation, resolution summaries, FAQ.
-
-### Guardrails
-
-Colang rules in `src/guardrails/config/`:
-- `topics.co` — topic control (on-topic enforcement)
-- `privacy.co` — cross-user data isolation
-- `safety.co` — content safety
-
-Output rails: two-layer evaluation — fast regex pre-filter per chunk + full NeMo rail evaluation per ~200-token chunk (50-token sliding window overlap). Unsafe chunks replaced with `...removed...`.
-
-### JWT Claims
-
-```json
-{
-  "userId": "UUID",
-  "username": "string",
-  "email": "string",
-  "roles": ["user"] or ["admin", "user"],
-  "iat": number,
-  "exp": number
-}
-```
-
-Admin check: `"admin" in roles`. Algorithm: HS256 with `JWT_SECRET`.
-
-### SSE Streaming Protocol
-
-POST-based SSE (not EventSource). Custom format:
-```
-data: {"chunk": "text", "index": 0}
-data: {"retract_chunk": 2, "placeholder": "...removed..."}
-data: {"done": true, "safety_notice": null}
-```
-
-### Frontend Widget
-
-Floating panel using `@patternfly/chatbot` (already installed in LiteMaaS). Imports from `@patternfly/chatbot/dist/dynamic/*`. Role mapping: PF uses `"bot"` not `"assistant"`.
-
-## Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `LETTA_SERVER_URL` | Yes | Letta runtime URL |
-| `LITEMAAS_API_URL` | Yes | LiteMaaS backend API |
-| `JWT_SECRET` | Yes | Shared JWT signing secret (HS256) |
-| **LLM Providers** | | |
-| `AGENT_MODEL` | Yes | Reasoning model — uses Letta provider prefix (e.g. `openai-proxy/MyModel`) |
-| `AGENT_LLM_API_BASE` | Yes | Agent model provider URL |
-| `AGENT_LLM_API_KEY` | Yes | Agent model provider API key |
-| `GUARDRAILS_MODEL` | Yes | Fast model for NeMo rail eval — plain name, no prefix (e.g. `MyModel`) |
-| `GUARDRAILS_LLM_API_BASE` | Yes | Guardrails model provider URL |
-| `GUARDRAILS_LLM_API_KEY` | Yes | Guardrails model provider API key |
-| **Monitored Platform** | | |
-| `LITELLM_API_URL` | Yes | Monitored LiteLLM instance URL (queried by tools) |
-| `LITELLM_API_KEY` | Yes | Monitored LiteLLM master key (admin tools only) |
-| `LITELLM_USER_API_KEY` | Yes | Monitored LiteLLM scoped key (standard tools) |
-| **Optional** | | |
-| `RATE_LIMIT_RPM` | No | Per-user chat requests/min (default: 30) |
-| `RATE_LIMIT_MEMORY_WRITES_PER_HOUR` | No | Per-user memory writes/hr (default: 20) |
+Letta requires a provider prefix (`provider/model-name` for `AGENT_MODEL`), but guardrails call the LLM provider directly and use the plain model name (`GUARDRAILS_MODEL`).
 
 ## LiteLLM API Quirks
 
@@ -156,53 +63,39 @@ Floating panel using `@patternfly/chatbot` (already installed in LiteMaaS). Impo
 - `/key/info` response can be nested (`data.info.*`) or flat — normalize with `data.get("info", data)`
 - `/health/liveness` may return JSON or plain text `I'm alive!`
 
-## Open Questions (Validate in Phase 1)
-
-- Concurrent core memory writes — does Letta serialize them?
-- Tool dependencies — is `httpx` available in stock `letta/letta` image?
-- Per-conversation tool registration — does Letta support different tool sets per conversation?
-- `conversation_search` isolation — does Letta enforce conversation-scoped search?
-
 ## Development
 
-### Daily workflow (live-reload, no rebuild)
-
-`compose.override.yaml` mounts `src/` into the container and enables uvicorn `--reload`. Code changes take effect instantly. Logs are written to `logs/{agent,letta}.log` (truncated on each container start).
-
 ```bash
-podman-compose up                  # starts with live-reload (override applied automatically)
-# Edit src/ files — uvicorn auto-restarts on save
-tail -f logs/agent.log             # tail agent logs (separate terminal)
-tail -f logs/letta.log             # tail Letta logs (separate terminal)
+podman-compose up                  # live-reload (compose.override.yaml applied automatically)
+podman-compose up --build          # rebuild after dependency changes (pyproject.toml / uv.lock)
+tail -f logs/agent.log             # proxy logs (separate terminal)
+tail -f logs/letta.log             # Letta logs (separate terminal)
 ```
-
-### When to rebuild
-
-Only rebuild when dependencies change (`pyproject.toml` / `uv.lock`):
-
-```bash
-podman-compose up --build          # rebuild image, then start
-```
-
-### Skip overrides (test production-like behavior)
-
-```bash
-podman-compose -f compose.yaml up  # ignores compose.override.yaml
-```
-
-### Ports
 
 | Service | URL |
 |---|---|
 | Proxy | http://localhost:8400 |
 | Letta | http://localhost:8283 |
+| Swagger UI | http://localhost:8400/docs |
+| ReDoc | http://localhost:8400/redoc |
 
-## Commands
+**Podman networking**: from the dev environment (outside containers), services are reachable at `host.containers.internal`, not `localhost`. Use `http://host.containers.internal:8400` for the proxy and `:8283` for Letta when testing with `curl`, integration tests, etc.
 
-```bash
-# Seed knowledge into agent
-python scripts/seed-knowledge.py
+Full workflow, testing, linting, debugging: `docs/guides/developer-guide.md`
 
-# Export learned knowledge for review
-python scripts/export-knowledge.py
-```
+## Configuration
+
+All configuration is via environment variables. See `docs/reference/configuration.md` for the full table with rationale, and `.env.example` for a ready-to-fill template.
+
+## Reference Pointers
+
+| Topic | Document |
+|---|---|
+| Memory architecture | `docs/architecture/memory-and-learning.md` |
+| Guardrails & Colang rules | `docs/reference/guardrails.md` |
+| JWT auth & token claims | `docs/reference/authentication.md` |
+| SSE streaming protocol | `docs/reference/api.md` |
+| Frontend widget | `docs/guides/frontend-integration.md` |
+| Architecture decisions & open questions | `docs/architecture/decisions.md` |
+| Module structure | `docs/reference/modules.md` |
+| Platform adaptation | `docs/guides/adapting-to-another-platform.md` |
