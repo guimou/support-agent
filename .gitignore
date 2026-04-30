@@ -54,6 +54,10 @@ compose.override.yaml
 # Letta data (local dev volumes)
 letta-data/
 
+# Logs (dev) — keep the directory, ignore the files
+logs/*
+!logs/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db

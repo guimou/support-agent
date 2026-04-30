@@ -1,5 +1,7 @@
 # Local development: podman-compose up
 # Production: use Helm chart in deployment/helm/
+# IMPORTANT: The agent proxy MUST run with a single worker (--workers 1).
+# The secrets lock relies on asyncio.Lock, which only works within one event loop.
 
 services:
   agent:
@@ -11,19 +13,26 @@ services:
     environment:
       - LETTA_SERVER_URL=http://letta:8283
       - LITEMAAS_API_URL=http://host.containers.internal:8081
-      - LITELLM_API_URL=http://host.containers.internal:4000
+      - JWT_SECRET=${JWT_SECRET}
+      # LLM providers (agent reasoning + guardrails classification)
+      - AGENT_MODEL=${AGENT_MODEL}
+      - AGENT_LLM_API_BASE=${AGENT_LLM_API_BASE}
+      - AGENT_LLM_API_KEY=${AGENT_LLM_API_KEY}
+      - GUARDRAILS_MODEL=${GUARDRAILS_MODEL}
+      - GUARDRAILS_LLM_API_BASE=${GUARDRAILS_LLM_API_BASE}
+      - GUARDRAILS_LLM_API_KEY=${GUARDRAILS_LLM_API_KEY}
+      # Monitored LiteLLM instance (queried by tools)
+      - LITELLM_API_URL=${LITELLM_API_URL}
       - LITELLM_API_KEY=${LITELLM_API_KEY}
       - LITELLM_USER_API_KEY=${LITELLM_USER_API_KEY}
-      - AGENT_MODEL=${AGENT_MODEL}
-      - GUARDRAILS_MODEL=${GUARDRAILS_MODEL}
-      - JWT_SECRET=${JWT_SECRET}
+      - LITEMAAS_ADMIN_API_KEY=${LITEMAAS_ADMIN_API_KEY}
       - PROXY_PORT=8400
       - LOG_LEVEL=debug
       - RATE_LIMIT_RPM=30
       - RATE_LIMIT_MEMORY_WRITES_PER_HOUR=20
     depends_on:
       letta:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   letta:
@@ -31,10 +40,16 @@ services:
     ports:
       - "8283:8283"
     environment:
-      - OPENAI_API_BASE=http://host.containers.internal:4000
-      - OPENAI_API_KEY=${LITELLM_API_KEY}
+      - OPENAI_API_BASE=${AGENT_LLM_API_BASE}
+      - OPENAI_API_KEY=${AGENT_LLM_API_KEY}
     volumes:
       - letta-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8283/v1/health"]
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
     restart: unless-stopped
 
 volumes:

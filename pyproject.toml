@@ -11,7 +11,7 @@ version = "0.1.0"
 description = "AI platform support assistant for LiteMaaS"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.136,<1",
     "uvicorn[standard]>=0.46,<1",
@@ -21,6 +21,7 @@ dependencies = [
     "pydantic-settings>=2.14,<3",
     "letta-client>=1.10,<2",
     "nemoguardrails>=0.17,<1",
+    "langchain-openai>=0.3,<1",
 ]
 
 [project.optional-dependencies]

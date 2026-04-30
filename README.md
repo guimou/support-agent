@@ -1,8 +1,11 @@
 # LiteMaaS Agent Assistant
 
-An AI-powered platform support assistant for [LiteMaaS](https://github.com/your-org/litemaas). Helps users with model subscriptions, API keys, usage questions, and troubleshooting.
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Status:** Design phase — see [Architecture docs](#documentation) for the full design.
+An AI-powered platform support assistant for LiteMaaS. Helps users with model subscriptions, API keys, usage questions, and troubleshooting.
+
+> **Status:** Phase 1 (Foundation) complete — proxy, guardrails, tools, and agent bootstrap implemented. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## What Is This?
 
@@ -37,7 +40,8 @@ The agent has **read-only access** to LiteMaaS and LiteLLM APIs. It uses multipl
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
 - [Podman](https://podman.io/) or [Docker](https://www.docker.com/)
 - A running LiteMaaS instance
 - A running LiteLLM proxy with at least two models configured (reasoning + guardrails)
@@ -47,7 +51,7 @@ The agent has **read-only access** to LiteMaaS and LiteLLM APIs. It uses multipl
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/your-org/litemaas-agent.git
+   git clone <repository-url>
    cd litemaas-agent
    ```
 
@@ -70,22 +74,31 @@ The agent has **read-only access** to LiteMaaS and LiteLLM APIs. It uses multipl
    curl http://localhost:8400/v1/health
    ```
 
+See the [Developer Guide](docs/guides/developer-guide.md) for the full setup walkthrough.
+
 ## Configuration
 
 | Variable | Required | Description |
 |---|---|---|
 | `LETTA_SERVER_URL` | Yes | Letta runtime URL |
 | `LITEMAAS_API_URL` | Yes | LiteMaaS backend API base URL |
-| `LITELLM_API_URL` | Yes | LiteLLM proxy base URL |
-| `LITELLM_API_KEY` | Yes | LiteLLM master key (admin tools only) |
-| `LITELLM_USER_API_KEY` | Yes | Scoped read-only LiteLLM key (standard tools) |
-| `AGENT_MODEL` | Yes | Reasoning model name (as configured in LiteLLM) |
-| `GUARDRAILS_MODEL` | Yes | Fast model for guardrail evaluation |
 | `JWT_SECRET` | Yes | Shared JWT signing secret (must match LiteMaaS) |
+| **LLM Providers** | | |
+| `AGENT_MODEL` | Yes | Reasoning model name |
+| `AGENT_LLM_API_BASE` | Yes | Agent model provider URL |
+| `AGENT_LLM_API_KEY` | Yes | Agent model provider API key |
+| `GUARDRAILS_MODEL` | Yes | Fast model for guardrail evaluation |
+| `GUARDRAILS_LLM_API_BASE` | Yes | Guardrails model provider URL |
+| `GUARDRAILS_LLM_API_KEY` | Yes | Guardrails model provider API key |
+| **Monitored Platform** | | |
+| `LITELLM_API_URL` | Yes | Monitored LiteLLM instance URL (queried by tools) |
+| `LITELLM_API_KEY` | Yes | Monitored LiteLLM master key (admin tools only) |
+| `LITELLM_USER_API_KEY` | Yes | Monitored LiteLLM scoped key (standard tools) |
+| **Optional** | | |
 | `RATE_LIMIT_RPM` | No | Per-user chat requests/min (default: 30) |
 | `RATE_LIMIT_MEMORY_WRITES_PER_HOUR` | No | Per-user memory writes/hr (default: 20) |
 
-See the [architecture doc](docs/architecture/ai-agent-assistant.md#10-configuration--environment-variables) for the full list.
+See [Configuration Reference](docs/reference/configuration.md) for the full list with defaults and groupings.
 
 ## Project Structure
 
@@ -108,21 +121,33 @@ scripts/                # Knowledge seeding and export utilities
 
 ## Documentation
 
-| Document | Description |
+Full documentation is in [`docs/`](docs/index.md):
+
+| Section | Description |
 |---|---|
-| [Architecture & Scenarios](docs/architecture/ai-agent-assistant.md) | Full system design, security model, memory architecture, deployment |
-| [Integration Reference](docs/architecture/ai-agent-assistant-integration-reference.md) | LiteMaaS/LiteLLM API schemas, JWT structure, frontend patterns |
+| [Architecture Overview](docs/architecture/overview.md) | System design, two-container model, multi-model routing |
+| [Security Architecture](docs/architecture/security.md) | Trust boundaries, 6 security invariants, memory safety |
+| [Memory & Learning](docs/architecture/memory-and-learning.md) | Three-tier memory, agent learning scenarios |
+| [Architecture Diagrams](docs/architecture/diagrams.md) | 8 Mermaid diagrams covering all system aspects |
+| [Developer Guide](docs/guides/developer-guide.md) | Setup, daily workflow, testing, debugging |
+| [Deployment Guide](docs/guides/deployment-guide.md) | Compose, containers, Kubernetes, monitoring |
+| [Tool Catalog](docs/reference/tools.md) | All 10 registered tools with security properties |
+| [Guardrails Reference](docs/reference/guardrails.md) | NeMo Guardrails config, Colang rules, custom actions |
+| [Module Reference](docs/reference/modules.md) | Code-level module documentation |
+
+See [docs/index.md](docs/index.md) for the complete navigation hub.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on branching, code standards, testing, and the PR process.
 
 ## Adapting to Another Platform
 
-The project is designed to be reusable. To adapt it for a different platform:
+The project is designed to be reusable. See the [Platform Adaptation Guide](docs/guides/adapting-to-another-platform.md) for a step-by-step walkthrough of what to change and what stays the same.
 
-1. Create a new adapter in `src/adapters/`
-2. Write platform-specific tools in `src/tools/`
-3. Update the agent persona in `src/agent/persona.py`
-4. Customize guardrail rules in `src/guardrails/config/`
+## Security
 
-Everything else (Letta runtime, proxy, auth, memory) stays the same.
+See [SECURITY.md](SECURITY.md) for the security model, invariants, and vulnerability reporting.
 
 ## License
 
