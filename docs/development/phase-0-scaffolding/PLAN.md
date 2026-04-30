@@ -3,7 +3,7 @@
 > **Goal**: Bootable project with dev environment, CI, and empty module structure.
 > **Validation**: `podman-compose up` starts both containers; proxy returns 200 on `/v1/health`.
 > **Parent plan**: [PROJECT_PLAN.md](../PROJECT_PLAN.md)
-> **Architecture**: [ai-agent-assistant.md](../../architecture/ai-agent-assistant.md)
+> **Architecture**: [Architecture Overview](../../architecture/overview.md) | [Security](../../architecture/security.md)
 
 ---
 

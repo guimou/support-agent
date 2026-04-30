@@ -1,2 +1,20 @@
-# Content safety rails (Colang)
-# Implemented in Phase 1D
+# Content safety rails (Colang 1.0)
+# Bot response definitions and regex-based pre-filter flows.
+
+define bot refuse unsafe output
+  "I apologize, but I'm unable to provide that information. Is there something else about the LiteMaaS platform I can help you with?"
+
+define bot refuse jailbreak
+  "I'm the LiteMaaS platform assistant and I need to stay focused on helping you with platform questions. How can I help you with models, subscriptions, or API keys?"
+
+define flow check jailbreak
+  $allowed = execute regex_check_input_injection
+  if not $allowed
+    bot refuse jailbreak
+    stop
+
+define flow check output safety
+  $allowed = execute regex_check_output_pii
+  if not $allowed
+    bot refuse unsafe output
+    stop

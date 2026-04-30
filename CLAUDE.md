@@ -4,11 +4,14 @@
 
 Standalone AI agent that acts as an intelligent **platform support assistant** for LiteMaaS users. Helps with platform questions, troubleshooting, and guidance — **not** the model playground (that's `/chatbot`).
 
-**Status**: Design phase — architecture docs in `docs/architecture/`, no implementation yet.
+**Status**: Phase 1 (Foundation) complete — proxy, guardrails, tools, and agent bootstrap implemented.
 
 Key documents:
-- `docs/architecture/ai-agent-assistant.md` — Full architecture & scenarios
-- `docs/architecture/ai-agent-assistant-integration-reference.md` — LiteMaaS/LiteLLM API schemas, JWT structure, frontend patterns
+- `docs/index.md` — Documentation navigation hub
+- `docs/architecture/overview.md` — System architecture
+- `docs/architecture/security.md` — Security model and invariants
+- `docs/reference/tools.md` — Tool catalog
+- `docs/reference/guardrails.md` — Guardrails reference
 
 ## Architecture
 
@@ -29,7 +32,7 @@ Request flow: `LiteMaaS Backend → Proxy (auth + input rails) → Letta (reason
 - **Proxy**: FastAPI with SSE streaming
 - **Frontend widget**: PatternFly 6, `@patternfly/chatbot` component
 - **Auth**: JWT (HS256 for PoC, RS256 for production)
-- **Models**: Multi-model via LiteLLM — `AGENT_MODEL` (reasoning) + `GUARDRAILS_MODEL` (fast classification)
+- **Models**: Multi-model via LiteLLM — `AGENT_MODEL` (reasoning) + `GUARDRAILS_MODEL` (fast classification). **Naming**: Letta requires a provider prefix (`provider/model-name`), but guardrails call the LLM provider directly and use the plain model name.
 
 ## Project Structure (Target)
 
@@ -67,13 +70,11 @@ These MUST be enforced in all code. Never compromise on these:
 
 ### Tool Development
 
-Tools are plain Python functions with `@tool` decorator, executed inside Letta's process (not the proxy):
+Tools are plain Python functions registered via `client.tools.upsert_from_function()` at bootstrap, executed inside Letta's process (not the proxy). Do NOT use the `@tool` decorator — it breaks source extraction:
 
 ```python
-from letta import tool
-
-@tool
 def my_tool(param: str) -> str:
+    import os, httpx
     user_id = os.getenv("LETTA_USER_ID")  # NEVER accept as function arg
     base_url = os.getenv("LITEMAAS_API_URL")
     token = os.getenv("LITELLM_USER_API_KEY")
@@ -132,12 +133,19 @@ Floating panel using `@patternfly/chatbot` (already installed in LiteMaaS). Impo
 |---|---|---|
 | `LETTA_SERVER_URL` | Yes | Letta runtime URL |
 | `LITEMAAS_API_URL` | Yes | LiteMaaS backend API |
-| `LITELLM_API_URL` | Yes | LiteLLM proxy URL |
-| `LITELLM_API_KEY` | Yes | Master key (admin tools only) |
-| `LITELLM_USER_API_KEY` | Yes | Scoped read-only key (standard tools) |
-| `AGENT_MODEL` | Yes | Reasoning model name (via LiteLLM) |
-| `GUARDRAILS_MODEL` | Yes | Fast model for NeMo rail evaluation |
 | `JWT_SECRET` | Yes | Shared JWT signing secret (HS256) |
+| **LLM Providers** | | |
+| `AGENT_MODEL` | Yes | Reasoning model — uses Letta provider prefix (e.g. `openai-proxy/MyModel`) |
+| `AGENT_LLM_API_BASE` | Yes | Agent model provider URL |
+| `AGENT_LLM_API_KEY` | Yes | Agent model provider API key |
+| `GUARDRAILS_MODEL` | Yes | Fast model for NeMo rail eval — plain name, no prefix (e.g. `MyModel`) |
+| `GUARDRAILS_LLM_API_BASE` | Yes | Guardrails model provider URL |
+| `GUARDRAILS_LLM_API_KEY` | Yes | Guardrails model provider API key |
+| **Monitored Platform** | | |
+| `LITELLM_API_URL` | Yes | Monitored LiteLLM instance URL (queried by tools) |
+| `LITELLM_API_KEY` | Yes | Monitored LiteLLM master key (admin tools only) |
+| `LITELLM_USER_API_KEY` | Yes | Monitored LiteLLM scoped key (standard tools) |
+| **Optional** | | |
 | `RATE_LIMIT_RPM` | No | Per-user chat requests/min (default: 30) |
 | `RATE_LIMIT_MEMORY_WRITES_PER_HOUR` | No | Per-user memory writes/hr (default: 20) |
 
@@ -157,14 +165,37 @@ Floating panel using `@patternfly/chatbot` (already installed in LiteMaaS). Impo
 
 ## Development
 
-```bash
-# Local dev (when compose.yaml exists)
-podman-compose up        # or docker-compose up
+### Daily workflow (live-reload, no rebuild)
 
-# Ports
-# Proxy: http://localhost:8400
-# Letta:  http://localhost:8283
+`compose.override.yaml` mounts `src/` into the container and enables uvicorn `--reload`. Code changes take effect instantly. Logs are written to `logs/{agent,letta}.log` (truncated on each container start).
+
+```bash
+podman-compose up                  # starts with live-reload (override applied automatically)
+# Edit src/ files — uvicorn auto-restarts on save
+tail -f logs/agent.log             # tail agent logs (separate terminal)
+tail -f logs/letta.log             # tail Letta logs (separate terminal)
 ```
+
+### When to rebuild
+
+Only rebuild when dependencies change (`pyproject.toml` / `uv.lock`):
+
+```bash
+podman-compose up --build          # rebuild image, then start
+```
+
+### Skip overrides (test production-like behavior)
+
+```bash
+podman-compose -f compose.yaml up  # ignores compose.override.yaml
+```
+
+### Ports
+
+| Service | URL |
+|---|---|
+| Proxy | http://localhost:8400 |
+| Letta | http://localhost:8283 |
 
 ## Commands
 

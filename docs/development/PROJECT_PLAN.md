@@ -2,8 +2,8 @@
 
 > **Status**: Active
 > **Created**: 2026-04-27
-> **Architecture**: [ai-agent-assistant.md](../architecture/ai-agent-assistant.md)
-> **Integration Reference**: [ai-agent-assistant-integration-reference.md](../architecture/ai-agent-assistant-integration-reference.md)
+> **Architecture**: [Architecture Overview](../architecture/overview.md) | [Security](../architecture/security.md) | [Memory](../architecture/memory-and-learning.md)
+> **Reference**: [Modules](../reference/modules.md) | [Configuration](../reference/configuration.md) | [API](../reference/api.md) | [Tools](../reference/tools.md)
 
 ---
 
@@ -35,7 +35,9 @@ This plan is organized into phases that build on each other. Each phase produces
 
 ---
 
-## Phase 1 — Foundation
+## Phase 1 — Foundation ✅
+
+**Status**: Complete (2026-04-28)
 
 **Goal**: Agent answers questions using real tools, with auth and basic guardrails. End-to-end flow works via API (no UI yet).
 
@@ -104,6 +106,10 @@ This plan is organized into phases that build on each other. Each phase produces
 - Admin service token injection (`LITELLM_API_KEY` only in admin conversations)
 - Per-user rate limiting at proxy (`RATE_LIMIT_RPM`)
 - Memory write throttling (`RATE_LIMIT_MEMORY_WRITES_PER_HOUR`)
+
+### 2E — Phase 1 Carryover (from implementation review)
+- **Guardrails strictness enforcement**: When `guardrails_required=true`, the server must refuse to start (not fall back to no guardrails). Review the fail-open path for non-strict deployments and document the security implications.
+- **`_is_blocked` heuristic robustness**: Replace the string-matching heuristic in `GuardrailsEngine._is_blocked()` with explicit policy result semantics from NeMo's response structure. The current short refusal-phrase list may produce false negatives.
 
 **Validation**: User interacts with the assistant widget in the LiteMaaS UI. Streaming responses appear incrementally. Unsafe content is retracted in real-time. Admin-only tools are inaccessible to regular users.
 
@@ -202,7 +208,7 @@ This plan is organized into phases that build on each other. Each phase produces
 | Phase | Focus | Depends On |
 |---|---|---|
 | **0 — Scaffolding** ✅ | Project setup, dev environment | Nothing |
-| **1 — Foundation** | Agent + tools + auth + basic guardrails | Phase 0, Letta image, LiteLLM models |
+| **1 — Foundation** ✅ | Agent + tools + auth + basic guardrails | Phase 0, Letta image, LiteLLM models |
 | **2 — Integration** | Streaming, frontend widget, admin tools | Phase 1, LiteMaaS backend/frontend changes |
 | **3 — Hardening** | Privacy rails, security testing, deployment | Phase 2 |
 | **4 — Observability** | Metrics, admin dashboard, learning pipeline | Phase 3 |

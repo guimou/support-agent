@@ -1,2 +1,32 @@
-# Topic control rails (Colang)
-# Implemented in Phase 1D
+# Topic control rails (Colang 1.0)
+# Example utterances for intent classification (used by NeMo's dialog rails).
+
+define user ask about litemaas
+  "How do I subscribe to a model?"
+  "Why is my API key not working?"
+  "What models are available?"
+  "How do I check my usage?"
+  "Why can't I access gpt-4o?"
+  "My API key stopped working"
+  "How much have I spent?"
+  "What are the rate limits?"
+  "Is the model healthy?"
+  "How do I get access to a restricted model?"
+  "Check my API keys"
+  "How do I find my API keys?"
+  "Where can I see my API keys?"
+  "How do I create a new API key?"
+  "How do I manage my API keys?"
+
+define user ask about unrelated topic
+  "What's the weather like?"
+  "Write me a poem"
+  "Help me with my homework"
+  "Tell me a joke"
+  "What is the meaning of life?"
+  "Can you write code for me?"
+  "Summarize this article"
+  "Translate this text"
+
+define bot refuse unrelated topic
+  "I'm the LiteMaaS platform assistant. I can help you with model subscriptions, API keys, usage questions, and platform troubleshooting. For other topics, I'd suggest using the models directly via the Chat Playground!"

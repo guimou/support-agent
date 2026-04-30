@@ -3,8 +3,8 @@
 > **Goal**: Agent answers questions using real tools, with auth and basic guardrails. End-to-end flow works via API (no UI yet).
 > **Validation**: Send a JWT-authenticated request to `/v1/chat` asking "Why can't I access gpt-4o?" — agent calls `check_subscription`, returns a scoped answer. Off-topic questions are refused.
 > **Parent plan**: [PROJECT_PLAN.md](../PROJECT_PLAN.md)
-> **Architecture**: [ai-agent-assistant.md](../../architecture/ai-agent-assistant.md)
-> **Integration Reference**: [ai-agent-assistant-integration-reference.md](../../architecture/ai-agent-assistant-integration-reference.md)
+> **Architecture**: [Architecture Overview](../../architecture/overview.md) | [Security](../../architecture/security.md) | [Memory](../../architecture/memory-and-learning.md)
+> **Reference**: [Modules](../../reference/modules.md) | [Configuration](../../reference/configuration.md) | [API](../../reference/api.md) | [Tools](../../reference/tools.md)
 
 ---
 
@@ -1164,7 +1164,7 @@ Implement JWT validation and user context extraction. Follow the patterns from t
 Validates HS256 JWTs using the shared JWT_SECRET. Extracts user context
 (userId, username, email, roles) from the token claims.
 
-Reference: docs/architecture/ai-agent-assistant-integration-reference.md#2-jwt-authentication
+Reference: docs/reference/authentication.md
 """
 
 from __future__ import annotations

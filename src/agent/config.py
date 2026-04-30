@@ -14,18 +14,34 @@ class Settings(BaseSettings):
 
     letta_server_url: str
     litemaas_api_url: str
+    jwt_secret: str
+
+    # LLM providers (independent from the monitored platform)
+    agent_model: str
+    agent_llm_api_base: str
+    agent_llm_api_key: str
+    guardrails_model: str
+    guardrails_llm_api_base: str
+    guardrails_llm_api_key: str
+
+    # Monitored LiteLLM instance (queried by tools)
     litellm_api_url: str
     litellm_api_key: str
     litellm_user_api_key: str
-    agent_model: str
-    guardrails_model: str
-    jwt_secret: str
+
+    # LiteMaaS admin API key (for admin tools calling LiteMaaS backend endpoints)
+    litemaas_admin_api_key: str = ""
+
+    # JWT issuer/audience validation (optional, recommended for production)
+    jwt_issuer: str = ""
+    jwt_audience: str = ""
 
     proxy_port: int = 8400
     log_level: str = "info"
     memory_seed_path: str | None = None
-    cors_origins: str = "*"
+    cors_origins: str = ""  # Must be configured explicitly; empty = reject all cross-origin requests
     output_rail_chunk_size: int = 200
     output_rail_overlap: int = 50
-    rate_limit_rpm: int = 30
-    rate_limit_memory_writes_per_hour: int = 20
+    guardrails_required: bool = True
+    rate_limit_rpm: int = 30  # TODO: Enforce via middleware (Phase 2)
+    rate_limit_memory_writes_per_hour: int = 20  # TODO: Enforce via memory write hook (Phase 2)
