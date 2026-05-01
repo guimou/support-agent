@@ -10,6 +10,7 @@ requires NeMo at runtime.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,18 +24,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 GUARDRAILS_CONFIG_DIR = Path(__file__).parent / "config"
+_MD_INLINE_RE = re.compile(r"[*_~`]")
 
-_BLOCKED_PREFIXES = (
-    "I'm sorry",
-    "I cannot",
-    "I can't",
-    "I'm not able",
-    "I am not able",
-    "I can only",
-    "Sorry,",
-    "Unfortunately,",
-    "Apologies,",
-)
+_COLANG_REFUSALS = frozenset({
+    # NeMo default refusal (self check input)
+    "I'm sorry, I can't respond to that.",
+    # topics.co
+    "I'm the LiteMaaS platform assistant. I can help you with model subscriptions, "
+    "API keys, usage questions, and platform troubleshooting. For other topics, "
+    "I'd suggest using the models directly via the Chat Playground!",
+    # safety.co
+    "I apologize, but I'm unable to provide that information. Is there something "
+    "else about the LiteMaaS platform I can help you with?",
+    # safety.co (jailbreak)
+    "I'm the LiteMaaS platform assistant and I need to stay focused on helping "
+    "you with platform questions. How can I help you with models, subscriptions, "
+    "or API keys?",
+})
 
 _INPUT_REFUSAL = (
     "I'm the LiteMaaS platform assistant. I can help you with "
@@ -84,12 +90,26 @@ class GuardrailsEngine:
     _SAFE_FALLBACK = _OUTPUT_REFUSAL
 
     @staticmethod
-    def _is_blocked(original: str, content: str | None) -> bool:
-        """Detect whether NeMo's response indicates a block."""
+    def _is_blocked_input(content: str | None) -> bool:
         if not content or not content.strip():
             return True
-        normalized = content.strip().replace("’", "'")
-        return normalized.startswith(_BLOCKED_PREFIXES)
+        return content.strip() in _COLANG_REFUSALS
+
+    @staticmethod
+    def _is_blocked_output(original: str, content: str | None) -> bool:
+        if not content or not content.strip():
+            return True
+        stripped = content.strip()
+        if stripped in _COLANG_REFUSALS:
+            return True
+        orig_stripped = original.strip()
+        if stripped == orig_stripped:
+            return False
+        norm_orig = _MD_INLINE_RE.sub("", orig_stripped)
+        norm_content = _MD_INLINE_RE.sub("", stripped)
+        if norm_orig == norm_content or norm_content in norm_orig or norm_orig in norm_content:
+            return False
+        return len(stripped) < 200
 
     def __init__(self, settings: Settings) -> None:
         from nemoguardrails import LLMRails, RailsConfig
@@ -143,7 +163,7 @@ class GuardrailsEngine:
 
             logger.debug("Input guardrails: content=%r", content)
 
-            blocked = self._is_blocked(message, content)
+            blocked = self._is_blocked_input(content)
             return RailResult(
                 blocked=blocked,
                 response=_INPUT_REFUSAL if blocked else content,
@@ -174,9 +194,7 @@ class GuardrailsEngine:
 
             logger.debug("Output guardrails: content=%r", content)
 
-            blocked = self._is_blocked(message, content)
-            # Return the original agent message on pass, not NeMo's
-            # potentially reformatted content.
+            blocked = self._is_blocked_output(message, content)
             return RailResult(
                 blocked=blocked,
                 response=_OUTPUT_REFUSAL if blocked else message,
@@ -185,3 +203,36 @@ class GuardrailsEngine:
         except Exception:
             logger.exception("Output guardrails error — failing closed")
             return RailResult(blocked=True, response=_OUTPUT_REFUSAL)
+
+    async def check_output_chunk(
+        self,
+        chunk: str,
+        user: AuthenticatedUser,
+        overlap_context: str = "",
+    ) -> RailResult:
+        try:
+            from guardrails.actions import _regex_check_output_pii_impl
+
+            pii_context = {"last_bot_message": chunk}
+            if not _regex_check_output_pii_impl(pii_context):
+                return RailResult(blocked=True, response=self._SAFE_FALLBACK)
+
+            eval_text = overlap_context + chunk
+            response = await self._rails.generate_async(
+                messages=[
+                    {"role": "user", "content": "respond to user"},
+                    {"role": "assistant", "content": eval_text},
+                ],
+                options={"rails": ["output"]},
+            )
+            try:
+                content = _extract_nemo_content(response)
+            except ValueError:
+                logger.error("Failed to parse NeMo chunk response — failing closed")
+                return RailResult(blocked=True, response=self._SAFE_FALLBACK)
+
+            blocked = self._is_blocked_output(eval_text, content)
+            return RailResult(blocked=blocked, response=self._SAFE_FALLBACK if blocked else chunk)
+        except Exception:
+            logger.exception("Chunk guardrails error — failing closed")
+            return RailResult(blocked=True, response=self._SAFE_FALLBACK)

@@ -6,8 +6,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
-from proxy.server import AgentState, ConversationLookupError, _wait_for_letta, get_agent_state
+from proxy.server import (
+    AgentState,
+    ConversationLookupError,
+    _wait_for_letta,
+    get_agent_state,
+    lifespan,
+)
 
 
 class TestGetAgentState:
@@ -118,3 +125,52 @@ class TestWaitForLetta:
             await _wait_for_letta("http://localhost:8283", timeout=5, interval=0.1)
 
         mock_client.get.assert_called()
+
+
+class TestLifespanGuardrailsEnforcement:
+    @pytest.mark.asyncio
+    async def test_lifespan_raises_when_guardrails_required_and_init_fails(self) -> None:
+        """When guardrails_required=true and guardrails init fails, lifespan raises."""
+        mock_settings = MagicMock()
+        mock_settings.guardrails_required = True
+        mock_settings.log_level = "info"
+        mock_settings.letta_server_url = "http://localhost:8283"
+
+        with (
+            patch("agent.config.Settings", return_value=mock_settings),
+            patch("proxy.server._wait_for_letta", new_callable=AsyncMock),
+            patch("agent.bootstrap.bootstrap_agent", return_value=("agent-id", MagicMock(), {})),
+            patch(
+                "guardrails.rails.GuardrailsEngine",
+                side_effect=RuntimeError("NeMo init failed"),
+            ),
+            pytest.raises(RuntimeError, match="NeMo init failed"),
+        ):
+            app = FastAPI(lifespan=lifespan)
+            async with app.router.lifespan_context(app):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_lifespan_continues_when_guardrails_optional_and_init_fails(self) -> None:
+        """When guardrails_required=false and guardrails init fails, lifespan continues."""
+        import proxy.server as srv
+
+        mock_settings = MagicMock()
+        mock_settings.guardrails_required = False
+        mock_settings.log_level = "info"
+        mock_settings.letta_server_url = "http://localhost:8283"
+
+        with (
+            patch("agent.config.Settings", return_value=mock_settings),
+            patch("proxy.server._wait_for_letta", new_callable=AsyncMock),
+            patch("agent.bootstrap.bootstrap_agent", return_value=("agent-id", MagicMock(), {})),
+            patch(
+                "guardrails.rails.GuardrailsEngine",
+                side_effect=RuntimeError("NeMo init failed"),
+            ),
+            patch.object(srv, "_agent_state", None),
+            patch.object(srv, "_guardrails", None),
+        ):
+            app = FastAPI(lifespan=lifespan)
+            async with app.router.lifespan_context(app):
+                assert srv._guardrails is None

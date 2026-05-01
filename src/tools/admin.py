@@ -15,9 +15,6 @@ Both keys are only injected into agent secrets when the request comes
 from an admin user (see proxy/routes.py chat() — empty string for non-admin).
 """
 
-from __future__ import annotations
-
-
 def get_global_usage_stats() -> str:
     """Get system-wide usage statistics (admin only).
 

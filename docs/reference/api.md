@@ -88,14 +88,17 @@ Uses POST to avoid exposing message content in URLs/logs and to support messages
 data: {"chunk": "Hello, how can I", "index": 0}
 data: {"chunk": " help you today?", "index": 1}
 data: {"retract_chunk": 2, "placeholder": "...removed..."}
-data: {"done": true, "safety_notice": null}
+data: {"done": true, "conversation_id": "conv-uuid", "safety_notice": null}
 ```
 
-| Event | Description |
-|---|---|
-| `chunk` | Safe text chunk with sequential index |
-| `retract_chunk` | Replaces a previously sent chunk (guardrails flagged it) |
-| `done` | Stream complete. `safety_notice` is non-null if any chunks were retracted |
+If input rails block the message, no SSE stream is started. The response is a JSON body (`application/json`) with `{"message": "...", "conversation_id": null, "blocked": true}`, identical to `/v1/chat` blocked responses. Clients distinguish by content-type.
+
+| Event | Fields | Description |
+|---|---|---|
+| `chunk` | `chunk: str`, `index: int` | Safe text chunk with sequential index |
+| `retract_chunk` | `retract_chunk: int`, `placeholder: str` | A chunk at this index was withheld (unsafe content never sent) |
+| `error` | `error: str`, `retryable: bool` | Agent or stream error; `retryable` hints whether the client should retry |
+| `done` | `done: true`, `conversation_id: str`, `safety_notice: str\|null` | Stream complete. Always sent as the final event (even after errors). |
 
 See [Frontend Integration](../guides/frontend-integration.md) for client implementation details.
 
@@ -106,7 +109,9 @@ See [Frontend Integration](../guides/frontend-integration.md) for client impleme
 | `401 Unauthorized` | Missing, invalid, or expired JWT |
 | `403 Forbidden` | Conversation does not belong to this user |
 | `422 Unprocessable Entity` | Invalid request body (missing `message`, etc.) |
-| `500 Internal Server Error` | Agent not bootstrapped, Letta unreachable, or internal error |
+| `429 Too Many Requests` | Rate limit exceeded (check `Retry-After` header) |
+| `502 Bad Gateway` | Agent/Letta unreachable or failed to process |
+| `503 Service Unavailable` | Guardrails not initialized |
 
 ## Rate Limiting
 

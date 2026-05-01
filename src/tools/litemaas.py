@@ -7,9 +7,6 @@ Functions that access user-scoped data inline their own user_id check
 list_models is an exception — it queries a public, unauthenticated endpoint.
 """
 
-from __future__ import annotations
-
-
 def list_models(search: str = "") -> str:
     """List available models on the platform, optionally filtered by search term.
 

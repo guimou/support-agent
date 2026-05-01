@@ -12,7 +12,7 @@ services:
       - "8400:8400"
     environment:
       - LETTA_SERVER_URL=http://letta:8283
-      - LITEMAAS_API_URL=http://host.containers.internal:8081
+      - LITEMAAS_API_URL=${LITEMAAS_API_URL}
       - JWT_SECRET=${JWT_SECRET}
       # LLM providers (agent reasoning + guardrails classification)
       - AGENT_MODEL=${AGENT_MODEL}

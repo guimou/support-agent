@@ -43,5 +43,5 @@ class Settings(BaseSettings):
     output_rail_chunk_size: int = 200
     output_rail_overlap: int = 50
     guardrails_required: bool = True
-    rate_limit_rpm: int = 30  # TODO: Enforce via middleware (Phase 2)
-    rate_limit_memory_writes_per_hour: int = 20  # TODO: Enforce via memory write hook (Phase 2)
+    rate_limit_rpm: int = 30
+    rate_limit_memory_writes_per_hour: int = 20

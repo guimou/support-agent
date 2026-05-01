@@ -45,6 +45,7 @@ htmlcov/
 # Environment
 .env
 .env.local
+.env.remote
 .env.*.local
 
 # Containers
