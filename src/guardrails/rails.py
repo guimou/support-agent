@@ -142,11 +142,13 @@ class GuardrailsEngine:
         from guardrails.actions import (
             check_user_context,
             regex_check_input_injection,
+            regex_check_off_topic,
             regex_check_output_pii,
         )
 
         self._rails.register_action(check_user_context, "check_user_context")
         self._rails.register_action(regex_check_input_injection, "regex_check_input_injection")
+        self._rails.register_action(regex_check_off_topic, "regex_check_off_topic")
         self._rails.register_action(regex_check_output_pii, "regex_check_output_pii")
 
         logger.info("NeMo Guardrails loaded from %s", GUARDRAILS_CONFIG_DIR)
@@ -222,7 +224,7 @@ class GuardrailsEngine:
             from guardrails.actions import _regex_check_output_pii_impl
 
             eval_text = overlap_context + chunk
-            pii_context = {"last_bot_message": eval_text}
+            pii_context = {"bot_message": eval_text}
             if not _regex_check_output_pii_impl(pii_context):
                 return RailResult(blocked=True, response=self._SAFE_FALLBACK)
             response = await self._rails.generate_async(

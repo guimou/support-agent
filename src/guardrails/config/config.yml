@@ -13,16 +13,28 @@ models:
           chat_template_kwargs:
             enable_thinking: false
 
+  - type: llama_guard
+    engine: openai
+    model: ${GUARDRAILS_MODEL}
+    parameters:
+      openai_api_base: ${GUARDRAILS_LLM_API_BASE}
+      api_key: ${GUARDRAILS_LLM_API_KEY}
+      model_kwargs:
+        extra_body:
+          chat_template_kwargs:
+            enable_thinking: false
+
 rails:
   input:
     flows:
       - check jailbreak
-      - self check input
+      - check off topic
+      - llama guard check input
 
   output:
     flows:
       - check output safety
-      - self check output
+      - llama guard check output
 
 instructions:
   - type: general
