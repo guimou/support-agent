@@ -162,6 +162,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "multiple workers break credential isolation between users."
         )
 
+    from proxy.routes import init_rate_limiters
+
+    init_rate_limiters(settings.rate_limit_rpm, settings.rate_limit_memory_writes_per_hour)
+
     await _wait_for_letta(settings.letta_server_url)
     logger.info("Bootstrapping agent...")
     agent_id, client, tool_ids = bootstrap_agent(settings)

@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 GUARDRAILS_CONFIG_DIR = Path(__file__).parent / "config"
 _MD_INLINE_RE = re.compile(r"[*_~`]")
+_REFUSAL_KEYWORDS_RE = re.compile(
+    r"I(?:'m| am) (?:sorry|unable|not able)|I (?:can(?:'t|not)|cannot) (?:provide|respond|help"
+    r" with that|assist with that|do that)|I apologize|I need to (?:stay focused|decline)",
+    re.IGNORECASE,
+)
 
 _COLANG_REFUSALS = frozenset({
     # NeMo default refusal (self check input)
@@ -61,8 +66,9 @@ def _extract_nemo_content(response: object) -> str:
     if isinstance(response, dict):
         content = response.get("content") or response.get("response")
         if content is None:
-            logger.warning(
-                "NeMo dict response has no 'content' or 'response' key: %s",
+            logger.error(
+                "NeMo dict response has no 'content' or 'response' key (keys=%s) "
+                "— returning empty string, which will trigger fail-closed blocking",
                 list(response.keys()),
             )
             return ""
@@ -109,6 +115,8 @@ class GuardrailsEngine:
         norm_content = _MD_INLINE_RE.sub("", stripped)
         if norm_orig == norm_content or norm_content in norm_orig or norm_orig in norm_content:
             return False
+        if _REFUSAL_KEYWORDS_RE.search(stripped):
+            return True
         return len(stripped) < 200
 
     def __init__(self, settings: Settings) -> None:
@@ -213,11 +221,10 @@ class GuardrailsEngine:
         try:
             from guardrails.actions import _regex_check_output_pii_impl
 
-            pii_context = {"last_bot_message": chunk}
+            eval_text = overlap_context + chunk
+            pii_context = {"last_bot_message": eval_text}
             if not _regex_check_output_pii_impl(pii_context):
                 return RailResult(blocked=True, response=self._SAFE_FALLBACK)
-
-            eval_text = overlap_context + chunk
             response = await self._rails.generate_async(
                 messages=[
                     {"role": "user", "content": "respond to user"},

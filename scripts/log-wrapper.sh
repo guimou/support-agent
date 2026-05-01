@@ -10,6 +10,7 @@ LOGFILE="$1"; shift
 : > "$LOGFILE"
 
 FIFO=$(mktemp -u /tmp/logfifo.XXXXXX)
-mkfifo "$FIFO"
+mkfifo "$FIFO" || { echo "Failed to create FIFO: $FIFO" >&2; exit 1; }
+trap 'rm -f "$FIFO"' EXIT
 tee -a "$LOGFILE" < "$FIFO" &
 exec "$@" > "$FIFO" 2>&1

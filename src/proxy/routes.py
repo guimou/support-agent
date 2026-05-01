@@ -41,33 +41,48 @@ _chat_rate_limiter: SlidingWindowRateLimiter | None = None
 _memory_write_limiter: SlidingWindowRateLimiter | None = None
 
 
-def _get_chat_rate_limiter() -> SlidingWindowRateLimiter:
-    global _chat_rate_limiter
-    if _chat_rate_limiter is None:
-        from agent.config import Settings
+def init_rate_limiters(rate_limit_rpm: int, rate_limit_memory_writes_per_hour: int) -> None:
+    """Initialize rate limiters from the already-loaded Settings instance.
 
-        settings = Settings()  # type: ignore[call-arg]
-        _chat_rate_limiter = SlidingWindowRateLimiter(
-            max_requests=settings.rate_limit_rpm,
-            window_seconds=60.0,
-        )
+    Called once during lifespan startup; must be called before any request.
+    """
+    global _chat_rate_limiter, _memory_write_limiter
+    _chat_rate_limiter = SlidingWindowRateLimiter(
+        max_requests=rate_limit_rpm,
+        window_seconds=60.0,
+    )
+    _memory_write_limiter = SlidingWindowRateLimiter(
+        max_requests=rate_limit_memory_writes_per_hour,
+        window_seconds=3600.0,
+    )
+
+
+def _get_chat_rate_limiter() -> SlidingWindowRateLimiter:
+    if _chat_rate_limiter is None:
+        raise RuntimeError("Rate limiters not initialized — call init_rate_limiters() first")
     return _chat_rate_limiter
 
 
 def _get_memory_write_limiter() -> SlidingWindowRateLimiter:
-    global _memory_write_limiter
     if _memory_write_limiter is None:
-        from agent.config import Settings
-
-        settings = Settings()  # type: ignore[call-arg]
-        _memory_write_limiter = SlidingWindowRateLimiter(
-            max_requests=settings.rate_limit_memory_writes_per_hour,
-            window_seconds=3600.0,
-        )
+        raise RuntimeError("Rate limiters not initialized — call init_rate_limiters() first")
     return _memory_write_limiter
 
 
 def check_rate_limit(user: AuthenticatedUser = Depends(validate_jwt)) -> AuthenticatedUser:  # noqa: B008
+    # Check memory write limit first (non-consuming read) so we don't
+    # waste a chat RPM token on a request that will be rejected anyway.
+    memory_limiter = _get_memory_write_limiter()
+    if memory_limiter.remaining(user.user_id) <= 0:
+        reset = memory_limiter.reset_time(user.user_id)
+        raise HTTPException(
+            status_code=429,
+            detail="Memory write limit exceeded",
+            headers={
+                "Retry-After": str(int(reset)),
+            },
+        )
+
     limiter = _get_chat_rate_limiter()
     if not limiter.is_allowed(user.user_id):
         remaining = limiter.remaining(user.user_id)
@@ -78,17 +93,6 @@ def check_rate_limit(user: AuthenticatedUser = Depends(validate_jwt)) -> Authent
             headers={
                 "Retry-After": str(int(reset)),
                 "X-RateLimit-Remaining": str(remaining),
-            },
-        )
-
-    memory_limiter = _get_memory_write_limiter()
-    if memory_limiter.remaining(user.user_id) <= 0:
-        reset = memory_limiter.reset_time(user.user_id)
-        raise HTTPException(
-            status_code=429,
-            detail="Memory write limit exceeded",
-            headers={
-                "Retry-After": str(int(reset)),
             },
         )
 
@@ -256,19 +260,19 @@ def _extract_assistant_message(
 
     Raises ValueError when no assistant message can be extracted.
     """
+    if response is None:
+        raise ValueError("Letta returned None response")
     messages = []
-    try:
+    if hasattr(response, "__iter__"):
         for chunk in response:
             messages.append(chunk)
-    except TypeError:
-        if response is None:
-            raise ValueError("Letta returned None response")
+    else:
         messages = [response]
 
     text_parts = []
     for msg in messages:
         if user and hasattr(msg, "message_type") and msg.message_type == "tool_call_message":
-            _track_memory_write(msg, user)
+            _count_memory_write(msg, user)
         if hasattr(msg, "message_type") and msg.message_type == "assistant_message":
             if hasattr(msg, "content") and msg.content:
                 text_parts.append(msg.content)
@@ -303,8 +307,14 @@ _MEMORY_WRITE_TOOLS = frozenset({
 })
 
 
-def _track_memory_write(msg: Any, user: AuthenticatedUser) -> None:
-    """Record a memory write tool call against the per-user rate limiter."""
+def _count_memory_write(msg: Any, user: AuthenticatedUser) -> None:
+    """Record a memory write tool call against the per-user rate limiter.
+
+    Post-hoc accounting only: by the time this runs, the write has already
+    been committed inside Letta.  Enforcement happens at the pre-request
+    gate in check_rate_limit(); this tracking ensures the NEXT request is
+    blocked if the limit is exhausted.
+    """
     tool_call = getattr(msg, "tool_call", None)
     if (
         tool_call
@@ -312,11 +322,17 @@ def _track_memory_write(msg: Any, user: AuthenticatedUser) -> None:
         and tool_call.name in _MEMORY_WRITE_TOOLS
     ):
         memory_limiter = _get_memory_write_limiter()
-        memory_limiter.is_allowed(user.user_id)
-        if memory_limiter.remaining(user.user_id) <= 0:
-            logger.warning(
-                "Memory write limit exhausted for user %s", user.user_id
+        allowed = memory_limiter.is_allowed(user.user_id)
+        if not allowed:
+            logger.error(
+                "Memory write limit exceeded for user %s during active request "
+                "(tool: %s) — write already committed, next request will be blocked",
+                user.user_id,
+                tool_call.name,
             )
+
+
+_KNOWN_EVENT_TYPES = frozenset({"chunk", "retract_chunk", "error"})
 
 
 def _json_event(
@@ -325,6 +341,8 @@ def _json_event(
     index: int | None = None,
     retryable: bool | None = None,
 ) -> str:
+    if event_type not in _KNOWN_EVENT_TYPES:
+        logger.error("Unknown SSE event type: %r", event_type)
     if event_type == "chunk":
         return json.dumps({"chunk": content, "index": index})
     elif event_type == "retract_chunk":
@@ -332,10 +350,6 @@ def _json_event(
     elif event_type == "error":
         return json.dumps({"error": content, "retryable": retryable or False})
     return json.dumps({event_type: content})
-
-
-def _json_str(value: str | None) -> str:
-    return json.dumps(value)
 
 
 def _done_event(conversation_id: str, safety_notice: str | None = None) -> str:
@@ -377,7 +391,15 @@ async def chat_stream(
     # 2. Acquire secrets lock BEFORE returning StreamingResponse.
     #    The generator releases it in its finally block, so the lock is held
     #    across the entire stream lifetime (secret injection → stream consumption).
-    await _secrets_lock.acquire()
+    try:
+        await asyncio.wait_for(
+            _secrets_lock.acquire(),
+            timeout=agent_state.settings.stream_lock_timeout_seconds,
+        )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=503, detail="Service busy — try again shortly"
+        ) from None
     try:
         try:
             agent_state.client.agents.update(
@@ -463,16 +485,33 @@ async def _stream_response(
         )
         chunk_index = 0
         retracted_indices: list[int] = []
+        stream_deadline = asyncio.get_event_loop().time() + settings.stream_max_duration_seconds
 
-        letta_stream = agent_state.client.conversations.messages.create(
-            conversation_id,
-            input=message,
-            streaming=True,
-            stream_tokens=True,
-        )
+        try:
+            letta_stream = agent_state.client.conversations.messages.create(
+                conversation_id,
+                input=message,
+                streaming=True,
+                stream_tokens=True,
+            )
+        except Exception:
+            logger.exception("Failed to create Letta stream for user %s", user.user_id)
+            event = _json_event("error", "Failed to start agent stream", retryable=True)
+            yield f"data: {event}\n\n"
+            yield _done_event(conversation_id)
+            return
 
         try:
             for msg in letta_stream:
+                if asyncio.get_event_loop().time() > stream_deadline:
+                    logger.error(
+                        "Stream duration exceeded %.0fs for user %s",
+                        settings.stream_max_duration_seconds, user.user_id,
+                    )
+                    event = _json_event("error", "Stream duration limit exceeded", retryable=False)
+                    yield f"data: {event}\n\n"
+                    yield _done_event(conversation_id)
+                    return
                 if not hasattr(msg, "message_type"):
                     continue
 
@@ -494,9 +533,11 @@ async def _stream_response(
                         )
                         event = _json_event("error", f"Agent stopped: {stop}", retryable=True)
                         yield f"data: {event}\n\n"
+                        yield _done_event(conversation_id)
+                        return
 
                 if msg.message_type == "tool_call_message":
-                    _track_memory_write(msg, user)
+                    _count_memory_write(msg, user)
 
                 if msg.message_type == "assistant_message":
                     if isinstance(msg.content, str):
@@ -520,7 +561,8 @@ async def _stream_response(
                             yield f"data: {_json_event('retract_chunk', chunk_index)}\n\n"
                             retracted_indices.append(chunk_index)
                         else:
-                            yield f"data: {_json_event('chunk', chunk_with_ctx.text, chunk_index)}\n\n"
+                            event = _json_event("chunk", chunk_with_ctx.text, chunk_index)
+                            yield f"data: {event}\n\n"
                         chunk_index += 1
 
             remaining = buffer.flush_remaining()

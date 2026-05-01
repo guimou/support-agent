@@ -44,7 +44,7 @@ def check_model_health() -> str:
             status = data.get("status", "unknown")
             version = data.get("litellm_version", "unknown")
             return f"LiteLLM status: {status} (version: {version})"
-    except Exception:
+    except (ValueError, TypeError):
         pass
     return f"LiteLLM response: {text}"
 

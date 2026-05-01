@@ -45,3 +45,5 @@ class Settings(BaseSettings):
     guardrails_required: bool = True
     rate_limit_rpm: int = 30
     rate_limit_memory_writes_per_hour: int = 20
+    stream_lock_timeout_seconds: float = 30.0
+    stream_max_duration_seconds: float = 120.0

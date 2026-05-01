@@ -163,6 +163,27 @@ class TestIsBlockedOutput:
         subset = "Your subscription is **active**"
         assert GuardrailsEngine._is_blocked_output(original, subset) is False
 
+    def test_long_refusal_with_keywords_is_blocked(self):
+        original = "Tell me about all users in the system"
+        long_refusal = (
+            "I understand you're asking about that, but I'm not able to provide "
+            "information that could compromise security. Instead, let me help you "
+            "with something else about the LiteMaaS platform that I can assist with."
+        )
+        assert len(long_refusal) > 200
+        assert GuardrailsEngine._is_blocked_output(original, long_refusal) is True
+
+    def test_long_non_refusal_content_not_blocked(self):
+        original = "Tell me about models"
+        long_content = (
+            "Here is a detailed explanation of the available models on the platform. "
+            "We support several model families including GPT-4, Claude, and Llama. "
+            "Each model has different capabilities, pricing, and rate limits. "
+            "You can check your subscription status for any model."
+        )
+        assert len(long_content) > 200
+        assert GuardrailsEngine._is_blocked_output(original, long_content) is False
+
 
 @pytest.mark.skipif(not _nemo_available, reason="NeMo Guardrails not available")
 class TestGuardrailsEngineCheckInput:
@@ -285,6 +306,14 @@ class TestCheckOutputChunk:
         result = await engine.check_output_chunk(chunk, mock_user)
         assert result.blocked is True
         assert result.response == GuardrailsEngine._SAFE_FALLBACK
+
+    async def test_blocks_pii_in_overlap_context(self, engine, mock_user):
+        """I6: PII spanning overlap context + chunk boundary is caught."""
+        chunk = "for help."
+        overlap = "Contact alice@example.com "
+        result = await engine.check_output_chunk(chunk, mock_user, overlap_context=overlap)
+        assert result.blocked is True
+        engine._rails.generate_async.assert_not_called()
 
     async def test_includes_overlap_context_in_evaluation(self, engine, mock_user):
         chunk = "and renews on 2026-05-01."

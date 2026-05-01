@@ -139,6 +139,7 @@ class TestLifespanGuardrailsEnforcement:
         with (
             patch("agent.config.Settings", return_value=mock_settings),
             patch("proxy.server._wait_for_letta", new_callable=AsyncMock),
+            patch("proxy.routes.init_rate_limiters"),
             patch("agent.bootstrap.bootstrap_agent", return_value=("agent-id", MagicMock(), {})),
             patch(
                 "guardrails.rails.GuardrailsEngine",
@@ -163,6 +164,7 @@ class TestLifespanGuardrailsEnforcement:
         with (
             patch("agent.config.Settings", return_value=mock_settings),
             patch("proxy.server._wait_for_letta", new_callable=AsyncMock),
+            patch("proxy.routes.init_rate_limiters"),
             patch("agent.bootstrap.bootstrap_agent", return_value=("agent-id", MagicMock(), {})),
             patch(
                 "guardrails.rails.GuardrailsEngine",
