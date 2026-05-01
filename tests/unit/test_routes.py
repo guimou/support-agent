@@ -471,7 +471,6 @@ class TestChatEndpoint:
         assert data["blocked"] is True
         assert data["message"] == "Blocked output."
 
-
     @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
@@ -635,8 +634,13 @@ class TestChatStreamEndpoint:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_returns_event_stream_content_type(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         mock_get_agent_state.return_value = mock_agent_state
         mock_get_guardrails.return_value = mock_guardrails
@@ -664,8 +668,12 @@ class TestChatStreamEndpoint:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_blocked_input_returns_json(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
     ):
         mock_get_agent_state.return_value = mock_agent_state
         guardrails = Mock()
@@ -692,8 +700,13 @@ class TestChatStreamEndpoint:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_emits_done_event(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         mock_get_agent_state.return_value = mock_agent_state
         mock_get_guardrails.return_value = mock_guardrails
@@ -724,8 +737,12 @@ class TestChatStreamEndpoint:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_returns_503_when_guardrails_unavailable(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
     ):
         mock_get_agent_state.return_value = mock_agent_state
         mock_get_guardrails.return_value = None
@@ -744,8 +761,13 @@ class TestRateLimiting:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_chat_returns_429_when_rate_limited(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         mock_get_agent_state.return_value = mock_agent_state
         mock_get_guardrails.return_value = mock_guardrails
@@ -775,8 +797,13 @@ class TestRateLimiting:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_returns_429_when_rate_limited(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         mock_get_agent_state.return_value = mock_agent_state
         mock_get_guardrails.return_value = mock_guardrails
@@ -805,15 +832,22 @@ class TestRateLimiting:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_rate_limit_is_per_user(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         mock_get_agent_state.return_value = mock_agent_state
         mock_get_guardrails.return_value = mock_guardrails
 
         mock_limiter = Mock()
+
         def is_allowed_side_effect(key):
             return key != "test-user-123"
+
         mock_limiter.is_allowed.side_effect = is_allowed_side_effect
         mock_limiter.remaining.return_value = 0
         mock_limiter.reset_time.return_value = 45.0
@@ -845,8 +879,13 @@ class TestRateLimiting:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_memory_write_limit_returns_429(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         """Test that exhausted memory write limit returns 429."""
         mock_get_agent_state.return_value = mock_agent_state
@@ -879,8 +918,13 @@ class TestStreamRetractChunk:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_retracts_blocked_chunk_and_includes_safety_notice(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         """T1: Output guardrails block a chunk mid-stream → retract_chunk + safety_notice."""
         mock_get_agent_state.return_value = mock_agent_state
@@ -917,8 +961,13 @@ class TestStreamRetractChunk:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_mixes_safe_and_retracted_chunks(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         """Safe and blocked chunks yield chunk and retract_chunk respectively."""
         mock_get_agent_state.return_value = mock_agent_state
@@ -967,8 +1016,13 @@ class TestStreamErrorEvents:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_error_message_terminates_stream(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         """T3: error_message from Letta yields error event + done and terminates."""
         mock_get_agent_state.return_value = mock_agent_state
@@ -1007,8 +1061,13 @@ class TestStreamErrorEvents:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_fatal_stop_reason_terminates_stream(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         """Fatal stop_reason yields error event + done and terminates."""
         mock_get_agent_state.return_value = mock_agent_state
@@ -1044,8 +1103,13 @@ class TestStreamErrorEvents:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_stream_create_failure_yields_error_event(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         """C4: If conversations.messages.create raises, stream yields error + done."""
         mock_get_agent_state.return_value = mock_agent_state
@@ -1075,8 +1139,13 @@ class TestStreamChunkEventFormat:
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
     def test_chunk_event_has_correct_structure(
-        self, mock_get_guardrails, mock_get_agent_state, mock_secret,
-        client, mock_agent_state, mock_guardrails,
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
     ):
         """Verify chunk events contain {chunk, index} and done has correct fields."""
         mock_get_agent_state.return_value = mock_agent_state
@@ -1125,7 +1194,11 @@ class TestCountMemoryWrite:
         from proxy.routes import _get_memory_write_limiter
 
         user = AuthenticatedUser(
-            user_id="mem-user-1", username="u", email="e", roles=("user",), is_admin=False,
+            user_id="mem-user-1",
+            username="u",
+            email="e",
+            roles=("user",),
+            is_admin=False,
         )
 
         tool_call = Mock()
@@ -1146,7 +1219,11 @@ class TestCountMemoryWrite:
         from proxy.routes import _get_memory_write_limiter
 
         user = AuthenticatedUser(
-            user_id="mem-user-2", username="u", email="e", roles=("user",), is_admin=False,
+            user_id="mem-user-2",
+            username="u",
+            email="e",
+            roles=("user",),
+            is_admin=False,
         )
 
         tool_call = Mock()
@@ -1169,7 +1246,11 @@ class TestCountMemoryWrite:
         init_rate_limiters(rate_limit_rpm=100, rate_limit_memory_writes_per_hour=10)
 
         user = AuthenticatedUser(
-            user_id="mem-user-3", username="u", email="e", roles=("user",), is_admin=False,
+            user_id="mem-user-3",
+            username="u",
+            email="e",
+            roles=("user",),
+            is_admin=False,
         )
 
         tool_msg = Mock()

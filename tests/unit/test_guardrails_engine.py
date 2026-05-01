@@ -9,9 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from proxy.auth import AuthenticatedUser
-
 from guardrails.rails import RailResult, _extract_nemo_content
+from proxy.auth import AuthenticatedUser
 
 # GuardrailsEngine.__init__ imports NeMo at runtime, but the class itself
 # can be imported. However, instantiation requires NeMo, so we check
@@ -22,7 +21,7 @@ try:
 except (ImportError, TypeError):
     _nemo_available = False
 
-from guardrails.rails import GuardrailsEngine
+from guardrails.rails import GuardrailsEngine  # noqa: E402
 
 
 @pytest.fixture

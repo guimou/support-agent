@@ -4,8 +4,6 @@ Imports the _impl functions directly (no NeMo dependency) so these tests
 run on any Python version, including environments where NeMo is not available.
 """
 
-import pytest
-
 from guardrails.actions import (
     _check_user_context_impl,
     _regex_check_input_injection_impl,
@@ -33,9 +31,7 @@ class TestRegexCheckOutputPii:
         assert result is True
 
     def test_detects_email(self):
-        result = _regex_check_output_pii_impl(
-            {"last_bot_message": "User alice@example.com has..."}
-        )
+        result = _regex_check_output_pii_impl({"last_bot_message": "User alice@example.com has..."})
         assert result is False
 
     def test_detects_full_api_key(self):

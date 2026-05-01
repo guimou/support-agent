@@ -76,7 +76,7 @@ def _regex_check_input_injection_impl(context: dict[str, Any] | None) -> bool:
 # The wrappers are only needed at runtime inside the Letta container.
 
 try:
-    from nemoguardrails.actions import action  # noqa: E402
+    from nemoguardrails.actions import action
 
     @action()  # type: ignore[untyped-decorator]
     async def check_user_context(context: dict[str, Any] | None = None) -> bool:

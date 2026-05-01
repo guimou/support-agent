@@ -107,9 +107,11 @@ class TestWaitForLetta:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("proxy.server.httpx.AsyncClient", return_value=mock_client):
-            with pytest.raises(RuntimeError, match="not reachable"):
-                await _wait_for_letta("http://localhost:9999", timeout=1, interval=0.1)
+        with (
+            patch("proxy.server.httpx.AsyncClient", return_value=mock_client),
+            pytest.raises(RuntimeError, match="not reachable"),
+        ):
+            await _wait_for_letta("http://localhost:9999", timeout=1, interval=0.1)
 
     @pytest.mark.asyncio
     async def test_returns_on_success(self) -> None:

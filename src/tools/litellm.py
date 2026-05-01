@@ -5,6 +5,7 @@ They must be self-contained — no imports from src/ modules.
 LiteLLM quirks: auth via x-litellm-api-key header, sentinel 2147483647 = unlimited.
 """
 
+
 def check_model_health() -> str:
     """Check the overall health of the LiteLLM proxy.
 
@@ -89,8 +90,8 @@ def get_model_info(model_name: str = "") -> str:
     if not models:
         return "No model info found" + (f" for '{model_name}'" if model_name else "") + "."
 
-    UNLIMITED = 2147483647
-    fmt = {UNLIMITED: "unlimited"}
+    unlimited = 2147483647
+    fmt = {unlimited: "unlimited"}
     lines = []
     for m in models[:10]:
         params = m.get("litellm_params", {})
@@ -148,8 +149,8 @@ def check_rate_limits() -> str:
     # Handle both nested and flat response formats
     key_info = data.get("info", data)
 
-    UNLIMITED = 2147483647
-    fmt = {UNLIMITED: "unlimited"}
+    unlimited = 2147483647
+    fmt = {unlimited: "unlimited"}
     tpm = key_info.get("tpm_limit")
     rpm = key_info.get("rpm_limit")
 

@@ -104,10 +104,12 @@ class TestInvariant6GuardrailsFailClosed:
     """
 
     def _read_rails_source(self) -> str:
-        source_path = inspect.getfile(inspect.getmodule(type(self))  or type(self))
+        source_path = inspect.getfile(inspect.getmodule(type(self)) or type(self))
         import pathlib
 
-        rails_path = pathlib.Path(source_path).parent.parent.parent / "src" / "guardrails" / "rails.py"
+        rails_path = (
+            pathlib.Path(source_path).parent.parent.parent / "src" / "guardrails" / "rails.py"
+        )
         return rails_path.read_text()
 
     def test_check_input_fails_closed(self) -> None:

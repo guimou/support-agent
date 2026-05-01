@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     proxy_port: int = 8400
     log_level: str = "info"
     memory_seed_path: str | None = None
-    cors_origins: str = ""  # Must be configured explicitly; empty = reject all cross-origin requests
+    cors_origins: str = ""
     output_rail_chunk_size: int = 200
     output_rail_overlap: int = 50
     guardrails_required: bool = True

@@ -16,8 +16,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nemoguardrails import LLMRails, RailsConfig
-
     from agent.config import Settings
     from proxy.auth import AuthenticatedUser
 
@@ -31,21 +29,23 @@ _REFUSAL_KEYWORDS_RE = re.compile(
     re.IGNORECASE,
 )
 
-_COLANG_REFUSALS = frozenset({
-    # NeMo default refusal (self check input)
-    "I'm sorry, I can't respond to that.",
-    # topics.co
-    "I'm the LiteMaaS platform assistant. I can help you with model subscriptions, "
-    "API keys, usage questions, and platform troubleshooting. For other topics, "
-    "I'd suggest using the models directly via the Chat Playground!",
-    # safety.co
-    "I apologize, but I'm unable to provide that information. Is there something "
-    "else about the LiteMaaS platform I can help you with?",
-    # safety.co (jailbreak)
-    "I'm the LiteMaaS platform assistant and I need to stay focused on helping "
-    "you with platform questions. How can I help you with models, subscriptions, "
-    "or API keys?",
-})
+_COLANG_REFUSALS = frozenset(
+    {
+        # NeMo default refusal (self check input)
+        "I'm sorry, I can't respond to that.",
+        # topics.co
+        "I'm the LiteMaaS platform assistant. I can help you with model subscriptions, "
+        "API keys, usage questions, and platform troubleshooting. For other topics, "
+        "I'd suggest using the models directly via the Chat Playground!",
+        # safety.co
+        "I apologize, but I'm unable to provide that information. Is there something "
+        "else about the LiteMaaS platform I can help you with?",
+        # safety.co (jailbreak)
+        "I'm the LiteMaaS platform assistant and I need to stay focused on helping "
+        "you with platform questions. How can I help you with models, subscriptions, "
+        "or API keys?",
+    }
+)
 
 _INPUT_REFUSAL = (
     "I'm the LiteMaaS platform assistant. I can help you with "

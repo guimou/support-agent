@@ -30,6 +30,7 @@ class AuthenticatedUser:
 
 _MIN_JWT_SECRET_LENGTH = 16
 
+
 @dataclass(frozen=True)
 class _JwtConfig:
     secret: str
@@ -48,9 +49,7 @@ def _get_jwt_config() -> _JwtConfig:
 
         settings = Settings()  # type: ignore[call-arg]
         if len(settings.jwt_secret) < _MIN_JWT_SECRET_LENGTH:
-            raise ValueError(
-                f"JWT_SECRET must be at least {_MIN_JWT_SECRET_LENGTH} characters"
-            )
+            raise ValueError(f"JWT_SECRET must be at least {_MIN_JWT_SECRET_LENGTH} characters")
         _jwt_config_cache = _JwtConfig(
             secret=settings.jwt_secret,
             issuer=settings.jwt_issuer,
@@ -77,14 +76,14 @@ def validate_jwt(request: Request) -> AuthenticatedUser:
     token = auth_header[7:]
     config = _get_jwt_config()
 
-    decode_opts: dict[str, object] = {"algorithms": ["HS256"]}
-    if config.issuer:
-        decode_opts["issuer"] = config.issuer
-    if config.audience:
-        decode_opts["audience"] = config.audience
-
     try:
-        payload = jwt.decode(token, config.secret, **decode_opts)
+        payload = jwt.decode(
+            token,
+            config.secret,
+            algorithms=["HS256"],
+            issuer=config.issuer or None,
+            audience=config.audience or None,
+        )
     except jwt.ExpiredSignatureError:
         client_host = request.client.host if request.client else "unknown"
         logger.warning("JWT rejected: expired token from %s", client_host)

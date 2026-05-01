@@ -109,7 +109,7 @@ def get_agent_state() -> AgentState:
 
 def get_guardrails() -> GuardrailsEngine | None:
     """Get the guardrails engine. Returns None if not configured."""
-    return _guardrails  # type: ignore[return-value]
+    return _guardrails
 
 
 async def _wait_for_letta(base_url: str, timeout: int = 120, interval: int = 2) -> None:
@@ -118,15 +118,11 @@ async def _wait_for_letta(base_url: str, timeout: int = 120, interval: int = 2) 
     async with httpx.AsyncClient() as client:
         while time.monotonic() < deadline:
             try:
-                resp = await client.get(
-                    f"{base_url}/v1/health", timeout=5, follow_redirects=True
-                )
+                resp = await client.get(f"{base_url}/v1/health", timeout=5, follow_redirects=True)
                 if resp.status_code == 200:
                     logger.info("Letta is ready at %s", base_url)
                     return
-                logger.info(
-                    "Letta returned %d at %s, retrying...", resp.status_code, base_url
-                )
+                logger.info("Letta returned %d at %s, retrying...", resp.status_code, base_url)
             except httpx.ConnectError:
                 logger.info("Letta not reachable at %s (connection refused), retrying...", base_url)
             except httpx.TimeoutException:

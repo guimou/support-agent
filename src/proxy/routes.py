@@ -178,9 +178,7 @@ async def chat(
             )
         except Exception:
             logger.exception("Failed to inject user secrets for user %s", user.user_id)
-            raise HTTPException(
-                status_code=502, detail="Failed to prepare agent context"
-            ) from None
+            raise HTTPException(status_code=502, detail="Failed to prepare agent context") from None
 
         # 3. Get or create conversation (with ownership validation)
         if request.conversation_id:
@@ -219,9 +217,7 @@ async def chat(
             )
         except Exception:
             logger.exception("Letta message creation failed for user %s", user.user_id)
-            raise HTTPException(
-                status_code=502, detail="Agent failed to process message"
-            ) from None
+            raise HTTPException(status_code=502, detail="Agent failed to process message") from None
 
     # 5. Extract assistant message from response
     try:
@@ -294,17 +290,24 @@ def _extract_assistant_message(
     raise ValueError(f"Failed to extract assistant message from {len(messages)} response chunks")
 
 
-_ERROR_STOP_REASONS = frozenset({
-    "error", "llm_api_error", "invalid_llm_response",
-    "max_tokens_exceeded", "insufficient_credits",
-    "context_window_overflow_in_system_prompt",
-})
+_ERROR_STOP_REASONS = frozenset(
+    {
+        "error",
+        "llm_api_error",
+        "invalid_llm_response",
+        "max_tokens_exceeded",
+        "insufficient_credits",
+        "context_window_overflow_in_system_prompt",
+    }
+)
 
-_MEMORY_WRITE_TOOLS = frozenset({
-    "core_memory_append",
-    "core_memory_replace",
-    "archival_memory_insert",
-})
+_MEMORY_WRITE_TOOLS = frozenset(
+    {
+        "core_memory_append",
+        "core_memory_replace",
+        "archival_memory_insert",
+    }
+)
 
 
 def _count_memory_write(msg: Any, user: AuthenticatedUser) -> None:
@@ -316,11 +319,7 @@ def _count_memory_write(msg: Any, user: AuthenticatedUser) -> None:
     blocked if the limit is exhausted.
     """
     tool_call = getattr(msg, "tool_call", None)
-    if (
-        tool_call
-        and hasattr(tool_call, "name")
-        and tool_call.name in _MEMORY_WRITE_TOOLS
-    ):
+    if tool_call and hasattr(tool_call, "name") and tool_call.name in _MEMORY_WRITE_TOOLS:
         memory_limiter = _get_memory_write_limiter()
         allowed = memory_limiter.is_allowed(user.user_id)
         if not allowed:
@@ -397,9 +396,7 @@ async def chat_stream(
             timeout=agent_state.settings.stream_lock_timeout_seconds,
         )
     except TimeoutError:
-        raise HTTPException(
-            status_code=503, detail="Service busy — try again shortly"
-        ) from None
+        raise HTTPException(status_code=503, detail="Service busy — try again shortly") from None
     try:
         try:
             agent_state.client.agents.update(
@@ -420,9 +417,7 @@ async def chat_stream(
             )
         except Exception:
             logger.exception("Failed to inject user secrets for user %s", user.user_id)
-            raise HTTPException(
-                status_code=502, detail="Failed to prepare agent context"
-            ) from None
+            raise HTTPException(status_code=502, detail="Failed to prepare agent context") from None
 
         if request.conversation_id:
             try:
@@ -458,8 +453,12 @@ async def chat_stream(
     # Lock is held — _stream_response releases it when the generator finishes.
     return StreamingResponse(
         _stream_response(
-            agent_state, guardrails, user,
-            request.message, conversation_id, agent_state.settings,
+            agent_state,
+            guardrails,
+            user,
+            request.message,
+            conversation_id,
+            agent_state.settings,
         ),
         media_type="text/event-stream",
     )
@@ -506,7 +505,8 @@ async def _stream_response(
                 if asyncio.get_event_loop().time() > stream_deadline:
                     logger.error(
                         "Stream duration exceeded %.0fs for user %s",
-                        settings.stream_max_duration_seconds, user.user_id,
+                        settings.stream_max_duration_seconds,
+                        user.user_id,
                     )
                     event = _json_event("error", "Stream duration limit exceeded", retryable=False)
                     yield f"data: {event}\n\n"
@@ -519,7 +519,8 @@ async def _stream_response(
                     error_detail = getattr(msg, "message", "Unknown agent error")
                     logger.error(
                         "Letta error during streaming for user %s: %s",
-                        user.user_id, error_detail,
+                        user.user_id,
+                        error_detail,
                     )
                     yield f"data: {_json_event('error', error_detail, retryable=False)}\n\n"
                     yield _done_event(conversation_id)
@@ -528,9 +529,7 @@ async def _stream_response(
                 if msg.message_type == "stop_reason":
                     stop = getattr(msg, "stop_reason", None)
                     if stop in _ERROR_STOP_REASONS:
-                        logger.error(
-                            "Letta stop reason '%s' for user %s", stop, user.user_id
-                        )
+                        logger.error("Letta stop reason '%s' for user %s", stop, user.user_id)
                         event = _json_event("error", f"Agent stopped: {stop}", retryable=True)
                         yield f"data: {event}\n\n"
                         yield _done_event(conversation_id)
@@ -544,8 +543,7 @@ async def _stream_response(
                         content = msg.content
                     elif isinstance(msg.content, list):
                         content = "".join(
-                            part.text for part in msg.content
-                            if hasattr(part, "text")
+                            part.text for part in msg.content if hasattr(part, "text")
                         )
                     else:
                         continue
@@ -585,7 +583,8 @@ async def _stream_response(
 
         safety_notice = (
             "Part of this response has been removed for safety reasons."
-            if retracted_indices else None
+            if retracted_indices
+            else None
         )
         yield _done_event(conversation_id, safety_notice)
     finally:

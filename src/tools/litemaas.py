@@ -7,6 +7,7 @@ Functions that access user-scoped data inline their own user_id check
 list_models is an exception — it queries a public, unauthenticated endpoint.
 """
 
+
 def list_models(search: str = "") -> str:
     """List available models on the platform, optionally filtered by search term.
 
@@ -32,9 +33,7 @@ def list_models(search: str = "") -> str:
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise RuntimeError(
-            f"Models endpoint returned HTTP {exc.response.status_code}"
-        ) from None
+        raise RuntimeError(f"Models endpoint returned HTTP {exc.response.status_code}") from None
     data = response.json()
 
     models = data.get("data", [])
@@ -45,7 +44,9 @@ def list_models(search: str = "") -> str:
     for m in models[:20]:  # Cap display at 20
         status = "active" if m.get("isActive") else "inactive"
         restricted = " [restricted]" if m.get("restrictedAccess") else ""
-        lines.append(f"- {m.get('name', 'unnamed')} ({m.get('provider', 'unknown')}) — {status}{restricted}")
+        name = m.get("name", "unnamed")
+        provider = m.get("provider", "unknown")
+        lines.append(f"- {name} ({provider}) — {status}{restricted}")
     if len(models) > 20:
         lines.append(f"... and {len(models) - 20} more")
     return "\n".join(lines)
@@ -142,9 +143,7 @@ def get_user_api_keys() -> str:
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise RuntimeError(
-            f"API keys endpoint returned HTTP {exc.response.status_code}"
-        ) from None
+        raise RuntimeError(f"API keys endpoint returned HTTP {exc.response.status_code}") from None
     data = response.json()
 
     keys = data.get("data", [])
@@ -201,9 +200,7 @@ def get_usage_stats() -> str:
     try:
         budget_resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise RuntimeError(
-            f"Budget endpoint returned HTTP {exc.response.status_code}"
-        ) from None
+        raise RuntimeError(f"Budget endpoint returned HTTP {exc.response.status_code}") from None
     budget = budget_resp.json()
 
     # Fetch usage summary (last 30 days)

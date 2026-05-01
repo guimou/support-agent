@@ -5,6 +5,7 @@ archival_memory_search tool. This module provides a supplementary
 search function that can be extended in Phase 4 with external search.
 """
 
+
 def search_docs(query: str) -> str:
     """Search the platform documentation and knowledge base for information.
 
