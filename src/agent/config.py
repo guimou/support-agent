@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     guardrails_llm_api_base: str
     guardrails_llm_api_key: str
 
+    # Topic classifier (defaults to agent model settings if not set)
+    topic_model: str = ""
+    topic_llm_api_base: str = ""
+    topic_llm_api_key: str = ""
+
     # Monitored LiteLLM instance (queried by tools)
     litellm_api_url: str
     litellm_api_key: str
@@ -39,9 +44,11 @@ class Settings(BaseSettings):
     proxy_port: int = 8400
     log_level: str = "info"
     memory_seed_path: str | None = None
-    cors_origins: str = ""  # Must be configured explicitly; empty = reject all cross-origin requests
+    cors_origins: str = ""
     output_rail_chunk_size: int = 200
     output_rail_overlap: int = 50
     guardrails_required: bool = True
-    rate_limit_rpm: int = 30  # TODO: Enforce via middleware (Phase 2)
-    rate_limit_memory_writes_per_hour: int = 20  # TODO: Enforce via memory write hook (Phase 2)
+    rate_limit_rpm: int = 30
+    rate_limit_memory_writes_per_hour: int = 20
+    stream_lock_timeout_seconds: float = 30.0
+    stream_max_duration_seconds: float = 120.0

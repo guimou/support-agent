@@ -1,0 +1,35 @@
+# Dev overrides — copy to compose.override.yaml to activate.
+# Merged automatically by podman-compose / docker-compose.
+#
+# What this adds:
+#   - Live-reload: src/ is bind-mounted, uvicorn watches for changes
+#   - Log files: stdout/stderr teed to ./logs/{agent,letta}.log
+#
+# Setup:
+#   cp compose.override.yaml.example compose.override.yaml
+#   mkdir -p logs && chmod 777 logs   # writable by container UID 1001
+#   podman-compose up --build
+#
+# Tail logs (separate terminal):
+#   tail -f logs/agent.log
+#   tail -f logs/letta.log
+#
+# When to rebuild (--build):
+#   Only after changing pyproject.toml or uv.lock.
+#   Source changes are picked up automatically via live-reload.
+
+services:
+  agent:
+    volumes:
+      - ./src:/app/src:z
+      - ./logs:/app/logs:z
+      - ./scripts/log-wrapper.sh:/usr/local/bin/log-wrapper.sh:z,ro
+    entrypoint: ["/usr/local/bin/log-wrapper.sh", "/app/logs/agent.log"]
+    command: ["uvicorn", "proxy.server:app", "--host", "0.0.0.0", "--port", "8400", "--reload", "--reload-dir", "/app/src"]
+
+  letta:
+    volumes:
+      - ./logs:/logs:z
+      - ./scripts/log-wrapper.sh:/usr/local/bin/log-wrapper.sh:z,ro
+    entrypoint: ["/usr/local/bin/log-wrapper.sh", "/logs/letta.log"]
+    command: ["/usr/local/bin/docker-entrypoint.sh", "./letta/server/startup.sh"]

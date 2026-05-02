@@ -40,4 +40,4 @@ USER agent
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8400/v1/health')"]
 
-CMD ["uvicorn", "proxy.server:app", "--host", "0.0.0.0", "--port", "8400"]
+CMD ["uvicorn", "proxy.server:app", "--host", "0.0.0.0", "--port", "8400", "--workers", "1"]

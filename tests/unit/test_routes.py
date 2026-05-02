@@ -1,3 +1,4 @@
+import json
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -7,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from proxy.auth import _JwtConfig
-from proxy.routes import _extract_assistant_message, router
+from proxy.routes import _count_memory_write, _extract_assistant_message, init_rate_limiters, router
 
 JWT_SECRET = "test-secret-for-routes-minimum-32chars"
 _TEST_JWT_CONFIG = _JwtConfig(secret=JWT_SECRET, issuer="", audience="")
@@ -56,9 +57,32 @@ def mock_agent_state():
     state.settings.litellm_user_api_key = "user-key"
     state.settings.litellm_api_key = "admin-key"
     state.settings.litemaas_admin_api_key = "litemaas-admin-key"
+    state.settings.output_rail_chunk_size = 200
+    state.settings.output_rail_overlap = 50
+    state.settings.stream_lock_timeout_seconds = 30.0
+    state.settings.stream_max_duration_seconds = 120.0
     state.get_or_create_conversation = Mock(return_value="conv-123")
     state.validate_conversation_ownership = Mock(return_value=True)
     return state
+
+
+@pytest.fixture(autouse=True)
+def _allow_rate_limit():
+    """Disable rate limiting by default in all route tests."""
+    init_rate_limiters(rate_limit_rpm=9999, rate_limit_memory_writes_per_hour=9999)
+    mock_limiter = Mock()
+    mock_limiter.is_allowed.return_value = True
+    mock_limiter.remaining.return_value = 100
+    mock_limiter.reset_time.return_value = 0.0
+    mock_mem_limiter = Mock()
+    mock_mem_limiter.is_allowed.return_value = True
+    mock_mem_limiter.remaining.return_value = 100
+    mock_mem_limiter.reset_time.return_value = 0.0
+    with (
+        patch("proxy.routes._get_chat_rate_limiter", return_value=mock_limiter),
+        patch("proxy.routes._get_memory_write_limiter", return_value=mock_mem_limiter),
+    ):
+        yield mock_limiter
 
 
 @pytest.fixture
@@ -447,7 +471,6 @@ class TestChatEndpoint:
         assert data["blocked"] is True
         assert data["message"] == "Blocked output."
 
-
     @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
     @patch("proxy.server.get_agent_state")
     @patch("proxy.server.get_guardrails")
@@ -599,3 +622,650 @@ class TestExtractAssistantMessage:
         """Test that ValueError is raised for None response."""
         with pytest.raises(ValueError, match="Letta returned None response"):
             _extract_assistant_message(None)
+
+
+class TestChatStreamEndpoint:
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    def test_stream_requires_authentication(self, mock_secret, client):
+        response = client.post("/v1/chat/stream", json={"message": "Hello"})
+        assert response.status_code == 401
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_returns_event_stream_content_type(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_msg = Mock()
+        mock_msg.message_type = "assistant_message"
+        mock_msg.content = "Hello from agent"
+        mock_agent_state.client.conversations.messages.create.return_value = iter([mock_msg])
+
+        output_result = Mock()
+        output_result.blocked = False
+        output_result.response = "Hello from agent"
+        mock_guardrails.check_output_chunk = AsyncMock(return_value=output_result)
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_blocked_input_returns_json(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+    ):
+        mock_get_agent_state.return_value = mock_agent_state
+        guardrails = Mock()
+        blocked_result = Mock()
+        blocked_result.blocked = True
+        blocked_result.response = "This message is not allowed."
+        guardrails.check_input = AsyncMock(return_value=blocked_result)
+        mock_get_guardrails.return_value = guardrails
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Bad message"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        data = response.json()
+        assert data["blocked"] is True
+        assert data["message"] == "This message is not allowed."
+        assert data["conversation_id"] is None
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_emits_done_event(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_msg = Mock()
+        mock_msg.message_type = "assistant_message"
+        mock_msg.content = "Hello"
+        mock_agent_state.client.conversations.messages.create.return_value = iter([mock_msg])
+
+        output_result = Mock()
+        output_result.blocked = False
+        output_result.response = "Hello"
+        mock_guardrails.check_output_chunk = AsyncMock(return_value=output_result)
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
+        last_line = lines[-1]
+        last_data = json.loads(last_line.removeprefix("data: "))
+        assert last_data["done"] is True
+        assert "conversation_id" in last_data
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_returns_503_when_guardrails_unavailable(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+    ):
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = None
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 503
+
+
+class TestRateLimiting:
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_chat_returns_429_when_rate_limited(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_limiter = Mock()
+        mock_limiter.is_allowed.return_value = False
+        mock_limiter.remaining.return_value = 0
+        mock_limiter.reset_time.return_value = 45.0
+
+        mock_mem_limiter = Mock()
+        mock_mem_limiter.remaining.return_value = 100
+
+        token = _make_test_token()
+        with (
+            patch("proxy.routes._get_chat_rate_limiter", return_value=mock_limiter),
+            patch("proxy.routes._get_memory_write_limiter", return_value=mock_mem_limiter),
+        ):
+            response = client.post(
+                "/v1/chat",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 429
+        assert "Retry-After" in response.headers
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_returns_429_when_rate_limited(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_limiter = Mock()
+        mock_limiter.is_allowed.return_value = False
+        mock_limiter.remaining.return_value = 0
+        mock_limiter.reset_time.return_value = 45.0
+
+        mock_mem_limiter = Mock()
+        mock_mem_limiter.remaining.return_value = 100
+
+        token = _make_test_token()
+        with (
+            patch("proxy.routes._get_chat_rate_limiter", return_value=mock_limiter),
+            patch("proxy.routes._get_memory_write_limiter", return_value=mock_mem_limiter),
+        ):
+            response = client.post(
+                "/v1/chat/stream",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 429
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_rate_limit_is_per_user(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_limiter = Mock()
+
+        def is_allowed_side_effect(key):
+            return key != "test-user-123"
+
+        mock_limiter.is_allowed.side_effect = is_allowed_side_effect
+        mock_limiter.remaining.return_value = 0
+        mock_limiter.reset_time.return_value = 45.0
+
+        mock_mem_limiter = Mock()
+        mock_mem_limiter.remaining.return_value = 100
+
+        with (
+            patch("proxy.routes._get_chat_rate_limiter", return_value=mock_limiter),
+            patch("proxy.routes._get_memory_write_limiter", return_value=mock_mem_limiter),
+        ):
+            token1 = _make_test_token(user_id="test-user-123")
+            r1 = client.post(
+                "/v1/chat",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {token1}"},
+            )
+            assert r1.status_code == 429
+
+            token2 = _make_test_token(user_id="other-user")
+            r2 = client.post(
+                "/v1/chat",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {token2}"},
+            )
+            assert r2.status_code != 429
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_memory_write_limit_returns_429(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        """Test that exhausted memory write limit returns 429."""
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_limiter = Mock()
+        mock_limiter.is_allowed.return_value = True
+        mock_limiter.remaining.return_value = 100
+
+        mock_mem_limiter = Mock()
+        mock_mem_limiter.remaining.return_value = 0
+        mock_mem_limiter.reset_time.return_value = 1800.0
+
+        token = _make_test_token()
+        with (
+            patch("proxy.routes._get_chat_rate_limiter", return_value=mock_limiter),
+            patch("proxy.routes._get_memory_write_limiter", return_value=mock_mem_limiter),
+        ):
+            response = client.post(
+                "/v1/chat",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 429
+        assert "Memory write limit" in response.json()["detail"]
+
+
+class TestStreamRetractChunk:
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_retracts_blocked_chunk_and_includes_safety_notice(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        """T1: Output guardrails block a chunk mid-stream → retract_chunk + safety_notice."""
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_msg = Mock()
+        mock_msg.message_type = "assistant_message"
+        mock_msg.content = "This is unsafe content"
+        mock_agent_state.client.conversations.messages.create.return_value = iter([mock_msg])
+
+        blocked_result = Mock()
+        blocked_result.blocked = True
+        blocked_result.response = "...removed..."
+        mock_guardrails.check_output_chunk = AsyncMock(return_value=blocked_result)
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
+        events = [json.loads(line.removeprefix("data: ")) for line in lines]
+
+        retract_events = [e for e in events if "retract_chunk" in e]
+        assert len(retract_events) >= 1
+        assert retract_events[0]["retract_chunk"] == 0
+
+        done_event = events[-1]
+        assert done_event["done"] is True
+        assert done_event["safety_notice"] is not None
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_mixes_safe_and_retracted_chunks(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        """Safe and blocked chunks yield chunk and retract_chunk respectively."""
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+        mock_agent_state.settings.output_rail_chunk_size = 5
+
+        msg1 = Mock()
+        msg1.message_type = "assistant_message"
+        msg1.content = "A" * 20
+
+        msg2 = Mock()
+        msg2.message_type = "assistant_message"
+        msg2.content = "B" * 20
+
+        mock_agent_state.client.conversations.messages.create.return_value = iter([msg1, msg2])
+
+        safe_result = Mock()
+        safe_result.blocked = False
+        safe_result.response = "ok"
+
+        blocked_result = Mock()
+        blocked_result.blocked = True
+        blocked_result.response = "removed"
+
+        mock_guardrails.check_output_chunk = AsyncMock(
+            side_effect=[safe_result, blocked_result, safe_result]
+        )
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
+        events = [json.loads(line.removeprefix("data: ")) for line in lines]
+
+        chunk_events = [e for e in events if "chunk" in e and "retract_chunk" not in e]
+        retract_events = [e for e in events if "retract_chunk" in e]
+        assert len(chunk_events) >= 1
+        assert len(retract_events) >= 1
+
+
+class TestStreamErrorEvents:
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_error_message_terminates_stream(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        """T3: error_message from Letta yields error event + done and terminates."""
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        err_msg = Mock()
+        err_msg.message_type = "error_message"
+        err_msg.message = "LLM call failed"
+
+        trailing = Mock()
+        trailing.message_type = "assistant_message"
+        trailing.content = "Should not appear"
+
+        mock_agent_state.client.conversations.messages.create.return_value = iter(
+            [err_msg, trailing]
+        )
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
+        events = [json.loads(line.removeprefix("data: ")) for line in lines]
+
+        error_events = [e for e in events if "error" in e]
+        assert len(error_events) == 1
+        assert "LLM call failed" in error_events[0]["error"]
+
+        assert events[-1]["done"] is True
+        chunk_events = [e for e in events if "chunk" in e and "retract_chunk" not in e]
+        assert len(chunk_events) == 0
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_fatal_stop_reason_terminates_stream(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        """Fatal stop_reason yields error event + done and terminates."""
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        stop_msg = Mock()
+        stop_msg.message_type = "stop_reason"
+        stop_msg.stop_reason = "llm_api_error"
+
+        trailing = Mock()
+        trailing.message_type = "assistant_message"
+        trailing.content = "Should not appear"
+
+        mock_agent_state.client.conversations.messages.create.return_value = iter(
+            [stop_msg, trailing]
+        )
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
+        events = [json.loads(line.removeprefix("data: ")) for line in lines]
+
+        error_events = [e for e in events if "error" in e]
+        assert len(error_events) == 1
+        assert "llm_api_error" in error_events[0]["error"]
+        assert events[-1]["done"] is True
+
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_stream_create_failure_yields_error_event(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        """C4: If conversations.messages.create raises, stream yields error + done."""
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_agent_state.client.conversations.messages.create.side_effect = Exception(
+            "Connection refused"
+        )
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        lines = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
+        events = [json.loads(line.removeprefix("data: ")) for line in lines]
+
+        error_events = [e for e in events if "error" in e]
+        assert len(error_events) == 1
+        assert events[-1]["done"] is True
+
+
+class TestStreamChunkEventFormat:
+    @patch("proxy.auth._get_jwt_config", return_value=_TEST_JWT_CONFIG)
+    @patch("proxy.server.get_agent_state")
+    @patch("proxy.server.get_guardrails")
+    def test_chunk_event_has_correct_structure(
+        self,
+        mock_get_guardrails,
+        mock_get_agent_state,
+        mock_secret,
+        client,
+        mock_agent_state,
+        mock_guardrails,
+    ):
+        """Verify chunk events contain {chunk, index} and done has correct fields."""
+        mock_get_agent_state.return_value = mock_agent_state
+        mock_get_guardrails.return_value = mock_guardrails
+
+        mock_msg = Mock()
+        mock_msg.message_type = "assistant_message"
+        mock_msg.content = "Hello world"
+        mock_agent_state.client.conversations.messages.create.return_value = iter([mock_msg])
+
+        output_result = Mock()
+        output_result.blocked = False
+        output_result.response = "Hello world"
+        mock_guardrails.check_output_chunk = AsyncMock(return_value=output_result)
+
+        token = _make_test_token()
+        response = client.post(
+            "/v1/chat/stream",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        lines = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
+        events = [json.loads(line.removeprefix("data: ")) for line in lines]
+
+        chunks = [e for e in events if "chunk" in e and "retract_chunk" not in e]
+        assert len(chunks) >= 1
+        assert chunks[0]["index"] == 0
+        assert isinstance(chunks[0]["chunk"], str)
+
+        done = events[-1]
+        assert done["done"] is True
+        assert "conversation_id" in done
+        assert done["safety_notice"] is None
+
+
+class TestCountMemoryWrite:
+    @pytest.fixture(autouse=True)
+    def _allow_rate_limit(self):
+        """Override the module autouse fixture to use real limiters."""
+        init_rate_limiters(rate_limit_rpm=100, rate_limit_memory_writes_per_hour=5)
+        yield
+
+    def test_counts_memory_write_tools(self):
+        """T4: _count_memory_write records tool calls for memory-write tools."""
+        from proxy.auth import AuthenticatedUser
+        from proxy.routes import _get_memory_write_limiter
+
+        user = AuthenticatedUser(
+            user_id="mem-user-1",
+            username="u",
+            email="e",
+            roles=("user",),
+            is_admin=False,
+        )
+
+        tool_call = Mock()
+        tool_call.name = "core_memory_append"
+        msg = Mock()
+        msg.message_type = "tool_call_message"
+        msg.tool_call = tool_call
+
+        limiter = _get_memory_write_limiter()
+        before = limiter.remaining("mem-user-1")
+        _count_memory_write(msg, user)
+        after = limiter.remaining("mem-user-1")
+        assert after == before - 1
+
+    def test_ignores_non_memory_tools(self):
+        """Non-memory tool calls are not counted."""
+        from proxy.auth import AuthenticatedUser
+        from proxy.routes import _get_memory_write_limiter
+
+        user = AuthenticatedUser(
+            user_id="mem-user-2",
+            username="u",
+            email="e",
+            roles=("user",),
+            is_admin=False,
+        )
+
+        tool_call = Mock()
+        tool_call.name = "get_model_info"
+        msg = Mock()
+        msg.message_type = "tool_call_message"
+        msg.tool_call = tool_call
+
+        limiter = _get_memory_write_limiter()
+        before = limiter.remaining("mem-user-2")
+        _count_memory_write(msg, user)
+        after = limiter.remaining("mem-user-2")
+        assert after == before
+
+    def test_extract_assistant_message_tracks_memory_writes(self):
+        """T6: _extract_assistant_message with user= tracks memory-write tool calls."""
+        from proxy.auth import AuthenticatedUser
+        from proxy.routes import _get_memory_write_limiter
+
+        init_rate_limiters(rate_limit_rpm=100, rate_limit_memory_writes_per_hour=10)
+
+        user = AuthenticatedUser(
+            user_id="mem-user-3",
+            username="u",
+            email="e",
+            roles=("user",),
+            is_admin=False,
+        )
+
+        tool_msg = Mock()
+        tool_msg.message_type = "tool_call_message"
+        tool_call = Mock()
+        tool_call.name = "core_memory_append"
+        tool_msg.tool_call = tool_call
+
+        assistant_msg = Mock()
+        assistant_msg.message_type = "assistant_message"
+        assistant_msg.content = "Done"
+
+        limiter = _get_memory_write_limiter()
+        before = limiter.remaining("mem-user-3")
+        result = _extract_assistant_message(iter([tool_msg, assistant_msg]), user)
+        after = limiter.remaining("mem-user-3")
+        assert result == "Done"
+        assert after == before - 1

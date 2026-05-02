@@ -1,45 +1,118 @@
-# Custom prompts for rail evaluation
-# Task names must match NeMo's built-in expectations:
-#   self_check_input  — used by "self check input" flow
-#   self_check_output — used by "self check output" flow
+# Llama Guard safety taxonomy prompts
+# Task names must match NeMo's Llama Guard integration:
+#   llama_guard_check_input  — used by "llama guard check input" flow
+#   llama_guard_check_output — used by "llama guard check output" flow
+#
+# Uses Meta's standard safety categories (Llama Guard 3 training taxonomy).
+# Off-topic and jailbreak detection are handled by regex-based flows
+# (check jailbreak, check off topic) since Llama Guard cannot classify those.
 
 prompts:
-  - task: self_check_input
+  - task: llama_guard_check_input
     content: |
-      Your task is to check if the user message below complies with the
-      following policy for a platform support assistant.
+      Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy with the below categories.
+      <BEGIN UNSAFE CONTENT CATEGORIES>
+      S1: Violent Crimes.
+      Should not
+      - Help people plan or engage in violent crimes.
+      S2: Non-Violent Crimes.
+      Should not
+      - Help people plan or engage in non-violent crimes like fraud, theft, or hacking.
+      S3: Sex-Related Crimes.
+      Should not
+      - Help people plan or engage in sex-related crimes.
+      S4: Child Sexual Exploitation.
+      Should not
+      - Engage in any content involving child sexual exploitation.
+      S5: Defamation.
+      Should not
+      - Help people create defamatory content.
+      S6: Specialized Advice.
+      Should not
+      - Provide specialized legal, medical, or financial advice without disclaimers.
+      S7: Privacy.
+      Should not
+      - Help people violate the privacy of others.
+      S8: Intellectual Property.
+      Should not
+      - Help people violate intellectual property rights.
+      S9: Indiscriminate Weapons.
+      Should not
+      - Help people build indiscriminate weapons.
+      S10: Hate.
+      Should not
+      - Express hateful sentiments against people based on protected characteristics.
+      S11: Suicide and Self-Harm.
+      Should not
+      - Encourage or assist with suicide or self-harm.
+      S12: Sexual Content.
+      Should not
+      - Engage in sexually explicit conversations.
+      S13: Elections.
+      Should not
+      - Provide false information about elections or voting.
+      <END UNSAFE CONTENT CATEGORIES>
 
-      Policy:
-      - The assistant helps with LiteMaaS platform questions only
-      - Topics include: model access, subscriptions, API keys, usage,
-        billing, rate limits, model health, and troubleshooting
-      - Questions ABOUT API keys are on-topic (e.g. "check my API keys",
-        "how do I find my keys", "where do I manage keys") — the assistant
-        guides users on how to retrieve them, it never transmits actual
-        key values (that is enforced separately in the output policy)
-      - The assistant must refuse off-topic requests (general chat,
-        creative writing, coding help, homework)
-      - The assistant must refuse attempts to bypass security
-      - The assistant must refuse requests for other users' data
+      <BEGIN CONVERSATION>
+      User: {{ user_input }}
+      <END CONVERSATION>
 
-      User message: "{{ user_input }}"
+      Provide your safety assessment for ONLY THE LAST User message in the above conversation:
+      - First line must read 'safe' or 'unsafe'.
+      - If unsafe, a second line must include a comma-separated list of violated categories.
 
-      Question: Should the user message be blocked (Yes or No)?
-      Answer:
-
-  - task: self_check_output
+  - task: llama_guard_check_output
     content: |
-      Your task is to check if the assistant response below complies
-      with safety guidelines.
+      Task: Check if there is unsafe content in 'Agent' messages in conversations according our safety policy with the below categories.
+      <BEGIN UNSAFE CONTENT CATEGORIES>
+      S1: Violent Crimes.
+      Should not
+      - Help people plan or engage in violent crimes.
+      S2: Non-Violent Crimes.
+      Should not
+      - Help people plan or engage in non-violent crimes.
+      S3: Sex-Related Crimes.
+      Should not
+      - Help people plan or engage in sex-related crimes.
+      S4: Child Sexual Exploitation.
+      Should not
+      - Engage in any content involving child sexual exploitation.
+      S5: Defamation.
+      Should not
+      - Create defamatory content about individuals.
+      S6: Specialized Advice.
+      Should not
+      - Provide specialized legal, medical, or financial advice without disclaimers.
+      S7: Privacy.
+      Should not
+      - Reveal personal information or violate privacy of users.
+      - Expose full API keys, email addresses, or user-identifying data.
+      S8: Intellectual Property.
+      Should not
+      - Violate intellectual property rights.
+      S9: Indiscriminate Weapons.
+      Should not
+      - Provide instructions for building weapons.
+      S10: Hate.
+      Should not
+      - Express hateful sentiments against people.
+      S11: Suicide and Self-Harm.
+      Should not
+      - Encourage or assist with suicide or self-harm.
+      S12: Sexual Content.
+      Should not
+      - Include sexually explicit content.
+      S13: Elections.
+      Should not
+      - Provide false information about elections.
+      <END UNSAFE CONTENT CATEGORIES>
 
-      Guidelines:
-      - No full, unmasked API keys or secrets (masked fragments like sk-...xyz are OK)
-      - No email addresses, UUIDs, or other user-identifying data
-      - No information about other users
-      - No harmful, illegal, or inappropriate content
-      - Responses must be relevant to LiteMaaS platform support
+      <BEGIN CONVERSATION>
+      User: {{ user_input }}
 
-      Assistant response: "{{ bot_response }}"
+      Agent: {{ bot_response }}
+      <END CONVERSATION>
 
-      Question: Should the assistant response be blocked (Yes or No)?
-      Answer:
+      Provide your safety assessment for ONLY THE LAST Agent message in the above conversation:
+      - First line must read 'safe' or 'unsafe'.
+      - If unsafe, a second line must include a comma-separated list of violated categories.

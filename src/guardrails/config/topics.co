@@ -17,6 +17,10 @@ define user ask about litemaas
   "Where can I see my API keys?"
   "How do I create a new API key?"
   "How do I manage my API keys?"
+  "Show me the global usage statistics"
+  "What are the system-wide usage stats?"
+  "How many users are active on the platform?"
+  "Look up subscriptions for a user"
 
 define user ask about unrelated topic
   "What's the weather like?"

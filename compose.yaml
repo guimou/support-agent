@@ -12,7 +12,7 @@ services:
       - "8400:8400"
     environment:
       - LETTA_SERVER_URL=http://letta:8283
-      - LITEMAAS_API_URL=http://host.containers.internal:8081
+      - LITEMAAS_API_URL=${LITEMAAS_API_URL}
       - JWT_SECRET=${JWT_SECRET}
       # LLM providers (agent reasoning + guardrails classification)
       - AGENT_MODEL=${AGENT_MODEL}
@@ -21,6 +21,10 @@ services:
       - GUARDRAILS_MODEL=${GUARDRAILS_MODEL}
       - GUARDRAILS_LLM_API_BASE=${GUARDRAILS_LLM_API_BASE}
       - GUARDRAILS_LLM_API_KEY=${GUARDRAILS_LLM_API_KEY}
+      # Topic classifier (defaults to agent model settings if not set)
+      - TOPIC_MODEL=${TOPIC_MODEL:-}
+      - TOPIC_LLM_API_BASE=${TOPIC_LLM_API_BASE:-}
+      - TOPIC_LLM_API_KEY=${TOPIC_LLM_API_KEY:-}
       # Monitored LiteLLM instance (queried by tools)
       - LITELLM_API_URL=${LITELLM_API_URL}
       - LITELLM_API_KEY=${LITELLM_API_KEY}

@@ -5,8 +5,6 @@ They must be self-contained — no imports from src/ modules.
 LiteLLM quirks: auth via x-litellm-api-key header, sentinel 2147483647 = unlimited.
 """
 
-_UNLIMITED_SENTINEL = 2147483647
-
 
 def check_model_health() -> str:
     """Check the overall health of the LiteLLM proxy.
@@ -38,17 +36,18 @@ def check_model_health() -> str:
         ) from None
 
     # Handle both JSON and plain text responses
-    content_type = response.headers.get("content-type", "")
-    if "application/json" in content_type:
+    text = response.text.strip().strip('"')
+    if "alive" in text.lower():
+        return "LiteLLM status: healthy (alive)"
+    try:
         data = response.json()
-        status = data.get("status", "unknown")
-        version = data.get("litellm_version", "unknown")
-        return f"LiteLLM status: {status} (version: {version})"
-    else:
-        text = response.text.strip()
-        if "alive" in text.lower():
-            return "LiteLLM status: healthy (alive)"
-        return f"LiteLLM response: {text}"
+        if isinstance(data, dict):
+            status = data.get("status", "unknown")
+            version = data.get("litellm_version", "unknown")
+            return f"LiteLLM status: {status} (version: {version})"
+    except (ValueError, TypeError):
+        pass
+    return f"LiteLLM response: {text}"
 
 
 def get_model_info(model_name: str = "") -> str:
@@ -91,7 +90,8 @@ def get_model_info(model_name: str = "") -> str:
     if not models:
         return "No model info found" + (f" for '{model_name}'" if model_name else "") + "."
 
-    fmt = {_UNLIMITED_SENTINEL: "unlimited"}
+    unlimited = 2147483647
+    fmt = {unlimited: "unlimited"}
     lines = []
     for m in models[:10]:
         params = m.get("litellm_params", {})
@@ -149,7 +149,8 @@ def check_rate_limits() -> str:
     # Handle both nested and flat response formats
     key_info = data.get("info", data)
 
-    fmt = {_UNLIMITED_SENTINEL: "unlimited"}
+    unlimited = 2147483647
+    fmt = {unlimited: "unlimited"}
     tpm = key_info.get("tpm_limit")
     rpm = key_info.get("rpm_limit")
 
