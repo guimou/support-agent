@@ -265,10 +265,24 @@ class GuardrailsEngine:
 
     async def check_input(self, message: str, user: AuthenticatedUser) -> RailResult:
         """Run input guardrails: Llama Guard safety + topic classification in parallel."""
-        safety_result, topic_result = await asyncio.gather(
+        results = await asyncio.gather(
             self._check_input_safety(message, user),
             self._check_topic(message),
+            return_exceptions=True,
         )
+        raw_safety, raw_topic = results[0], results[1]
+
+        if isinstance(raw_safety, BaseException):
+            logger.exception("Input safety check raised — failing closed", exc_info=raw_safety)
+            return RailResult(blocked=True, response=_INPUT_REFUSAL)
+        safety_result: RailResult = raw_safety
+
+        topic_result: TopicResult
+        if isinstance(raw_topic, BaseException):
+            logger.exception("Topic classifier raised — failing open", exc_info=raw_topic)
+            topic_result = TopicResult(status="on_topic")
+        else:
+            topic_result = raw_topic
 
         if safety_result.blocked:
             return safety_result
