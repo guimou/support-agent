@@ -20,32 +20,6 @@ _PII_PATTERNS = [
     r"sk-[a-zA-Z0-9]{20,}",  # Full API keys (not prefixes like sk-...xxxx)
 ]
 
-_INJECTION_PATTERNS = [
-    r"ignore.*instructions",
-    r"ignore.*rules",
-    r"pretend (you are|you're|to be)",
-    r"act as (if|though)",
-    r"you are now",
-    r"system prompt",
-    r"reveal your instructions",
-    r"what are your rules",
-    r"jailbreak",
-    r"DAN mode",
-]
-
-_OFFTOPIC_PATTERNS = [
-    r"\bwrite\s+(?:me\s+)?(?:a\s+)?(?:poem|story|essay|haiku|song|limerick|novel)\b",
-    r"\b(?:tell\s+(?:me\s+)?(?:a\s+)?)?joke\b",
-    r"\bweather\b",
-    r"\bhomework\b",
-    r"\bmeaning\s+of\s+life\b",
-    r"\b(?:help|assist)\s+(?:me\s+)?(?:with\s+)?(?:my\s+)?(?:homework|essay|math)\b",
-    r"\brecipe\b",
-    r"\btranslate\s+this\b",
-    r"\bsummarize\s+this\b",
-    r"\bwrite\s+(?:me\s+)?(?:a\s+)?(?:code|script|program)\s+(?:for|to|that)\b",
-]
-
 
 def _check_user_context_impl(context: dict[str, Any] | None) -> bool:
     """Verify that a valid user_id exists in the NeMo context dict.
@@ -71,32 +45,6 @@ def _regex_check_output_pii_impl(context: dict[str, Any] | None) -> bool:
     return all(not re.search(pattern, bot_response) for pattern in _PII_PATTERNS)
 
 
-def _regex_check_input_injection_impl(context: dict[str, Any] | None) -> bool:
-    """Regex pre-filter for jailbreak / injection attempts in user input."""
-    if context is None:
-        return False
-
-    user_input = context.get("user_message", "")
-    if not user_input:
-        return True
-
-    user_lower = user_input.lower()
-    return not any(re.search(pattern, user_lower) for pattern in _INJECTION_PATTERNS)
-
-
-def _regex_check_off_topic_impl(context: dict[str, Any] | None) -> bool:
-    """Regex pre-filter for off-topic requests unrelated to LiteMaaS."""
-    if context is None:
-        return False
-
-    user_input = context.get("user_message", "")
-    if not user_input:
-        return True
-
-    user_lower = user_input.lower()
-    return not any(re.search(pattern, user_lower) for pattern in _OFFTOPIC_PATTERNS)
-
-
 # --- NeMo @action() wrappers (delegate to impl functions) ---
 # Guarded import: NeMo may not be available on all Python versions.
 # The wrappers are only needed at runtime inside the Letta container.
@@ -112,14 +60,6 @@ try:
     async def regex_check_output_pii(context: dict[str, Any] | None = None) -> bool:
         return _regex_check_output_pii_impl(context)
 
-    @action()  # type: ignore[untyped-decorator]
-    async def regex_check_input_injection(context: dict[str, Any] | None = None) -> bool:
-        return _regex_check_input_injection_impl(context)
-
-    @action()  # type: ignore[untyped-decorator]
-    async def regex_check_off_topic(context: dict[str, Any] | None = None) -> bool:
-        return _regex_check_off_topic_impl(context)
-
 except ImportError:
     logger.info("NeMo actions not available — action wrappers not registered (expected in tests)")
 
@@ -127,10 +67,4 @@ except ImportError:
         raise RuntimeError("NeMo action wrappers not available")
 
     async def regex_check_output_pii(**kwargs: Any) -> bool:
-        raise RuntimeError("NeMo action wrappers not available")
-
-    async def regex_check_input_injection(**kwargs: Any) -> bool:
-        raise RuntimeError("NeMo action wrappers not available")
-
-    async def regex_check_off_topic(**kwargs: Any) -> bool:
         raise RuntimeError("NeMo action wrappers not available")

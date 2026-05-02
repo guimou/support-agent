@@ -1,26 +1,10 @@
 # Content safety rails (Colang 1.0)
 # Bot response definitions and regex-based pre-filter flows.
+# Input safety (jailbreak, off-topic) is handled outside NeMo by
+# Llama Guard + agent-model topic classifier in rails.py.
 
 define bot refuse unsafe output
   "I apologize, but I'm unable to provide that information. Is there something else about the LiteMaaS platform I can help you with?"
-
-define bot refuse jailbreak
-  "I'm the LiteMaaS platform assistant and I need to stay focused on helping you with platform questions. How can I help you with models, subscriptions, or API keys?"
-
-define bot refuse off topic
-  "I'm the LiteMaaS platform assistant. I can help you with model subscriptions, API keys, usage questions, and platform troubleshooting. For other topics, I'd suggest using the models directly via the Chat Playground!"
-
-define flow check jailbreak
-  $allowed = execute regex_check_input_injection
-  if not $allowed
-    bot refuse jailbreak
-    stop
-
-define flow check off topic
-  $allowed = execute regex_check_off_topic
-  if not $allowed
-    bot refuse off topic
-    stop
 
 define flow check output safety
   $allowed = execute regex_check_output_pii

@@ -127,7 +127,7 @@ class TestInvariant6GuardrailsFailClosed:
 
         assert _regex_check_output_pii_impl(None) is False
 
-    def test_injection_action_fails_closed_on_none_context(self) -> None:
-        from guardrails.actions import _regex_check_input_injection_impl
-
-        assert _regex_check_input_injection_impl(None) is False
+    def test_topic_classifier_fails_open_in_source(self) -> None:
+        source = self._read_rails_source()
+        assert "failing open" in source
+        assert 'status="on_topic"' in source

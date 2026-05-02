@@ -27,8 +27,6 @@ models:
 rails:
   input:
     flows:
-      - check jailbreak
-      - check off topic
       - llama guard check input
 
   output:

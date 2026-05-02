@@ -209,11 +209,11 @@ async def chat(
                     status_code=502, detail="Failed to resolve conversation"
                 ) from None
 
-        # 4. Send message to Letta
+        # 4. Send message to Letta (may be annotated by topic classifier)
         try:
             letta_response = agent_state.client.conversations.messages.create(
                 conversation_id,
-                input=request.message,
+                input=input_result.response,
             )
         except Exception:
             logger.exception("Letta message creation failed for user %s", user.user_id)
@@ -456,7 +456,7 @@ async def chat_stream(
             agent_state,
             guardrails,
             user,
-            request.message,
+            input_result.response,
             conversation_id,
             agent_state.settings,
         ),

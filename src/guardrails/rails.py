@@ -3,17 +3,23 @@
 Provides input/output rail evaluation via the NeMo Guardrails library.
 The guardrails model is configured via config.yml and uses OpenAI-compatible provider.
 
-RailResult and _extract_nemo_content are importable without NeMo; GuardrailsEngine
-requires NeMo at runtime.
+Input pipeline: Llama Guard (safety, via NeMo) + agent-model topic classifier
+run in parallel. Output pipeline: regex PII + Llama Guard (safety, via NeMo).
+
+RailResult, TopicResult, and _extract_nemo_content are importable without NeMo;
+GuardrailsEngine requires NeMo at runtime.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import httpx
 
 if TYPE_CHECKING:
     from agent.config import Settings
@@ -57,6 +63,36 @@ _OUTPUT_REFUSAL = (
     "I'm unable to provide a response at this time. "
     "Please try again or contact support if the issue persists."
 )
+
+_TOPIC_CHECK_TIMEOUT = 10.0
+
+_TOPIC_SYSTEM_PROMPT = """\
+You are a topic classifier for the LiteMaaS Platform Assistant.
+
+LiteMaaS is a platform that provides access to AI models. The assistant helps users with:
+- Model subscriptions and access management
+- API keys (creation, management, troubleshooting)
+- Usage statistics and billing
+- Platform troubleshooting and errors
+- Model availability, health, and rate limits
+- Account and team management
+- Understanding how to use the platform
+
+Classify the user's message as:
+- "on_topic" if clearly related to LiteMaaS platform operations
+- "off_topic: <reason>" if clearly unrelated (e.g., creative writing, general knowledge)
+- "uncertain: <reason>" if ambiguous (e.g., AI/ML questions that might relate to models)
+
+Respond with ONLY the classification. No explanation beyond the reason tag.\
+"""
+
+
+@dataclass(frozen=True)
+class TopicResult:
+    """Result of the agent-model topic classifier."""
+
+    status: str  # "on_topic", "off_topic", or "uncertain"
+    reason: str = ""
 
 
 def _extract_nemo_content(response: object) -> str:
@@ -141,20 +177,22 @@ class GuardrailsEngine:
 
         from guardrails.actions import (
             check_user_context,
-            regex_check_input_injection,
-            regex_check_off_topic,
             regex_check_output_pii,
         )
 
         self._rails.register_action(check_user_context, "check_user_context")
-        self._rails.register_action(regex_check_input_injection, "regex_check_input_injection")
-        self._rails.register_action(regex_check_off_topic, "regex_check_off_topic")
         self._rails.register_action(regex_check_output_pii, "regex_check_output_pii")
+
+        self._topic_model = settings.topic_model or settings.agent_model
+        self._topic_api_base = (settings.topic_llm_api_base or settings.agent_llm_api_base).rstrip(
+            "/"
+        )
+        self._topic_api_key = settings.topic_llm_api_key or settings.agent_llm_api_key
 
         logger.info("NeMo Guardrails loaded from %s", GUARDRAILS_CONFIG_DIR)
 
-    async def check_input(self, message: str, user: AuthenticatedUser) -> RailResult:
-        """Run input rails on a user message."""
+    async def _check_input_safety(self, message: str, user: AuthenticatedUser) -> RailResult:
+        """Run Llama Guard input safety check via NeMo (fails closed)."""
         try:
             response = await self._rails.generate_async(
                 messages=[
@@ -171,17 +209,83 @@ class GuardrailsEngine:
                 )
                 return RailResult(blocked=True, response=_INPUT_REFUSAL)
 
-            logger.debug("Input guardrails: content=%r", content)
+            logger.debug("Input safety check: content=%r", content)
 
             blocked = self._is_blocked_input(content)
             return RailResult(
                 blocked=blocked,
-                response=_INPUT_REFUSAL if blocked else content,
+                response=_INPUT_REFUSAL if blocked else message,
             )
 
         except Exception:
-            logger.exception("Input guardrails error — failing closed")
+            logger.exception("Input safety check error — failing closed")
             return RailResult(blocked=True, response=_INPUT_REFUSAL)
+
+    async def _check_topic(self, message: str) -> TopicResult:
+        """Classify message topic using the agent model (fails open)."""
+        try:
+            async with httpx.AsyncClient(timeout=_TOPIC_CHECK_TIMEOUT) as client:
+                resp = await client.post(
+                    f"{self._topic_api_base}/chat/completions",
+                    headers={
+                        "x-litellm-api-key": self._topic_api_key,
+                        "Authorization": f"Bearer {self._topic_api_key}",
+                    },
+                    json={
+                        "model": self._topic_model,
+                        "messages": [
+                            {"role": "system", "content": _TOPIC_SYSTEM_PROMPT},
+                            {"role": "user", "content": message},
+                        ],
+                        "max_tokens": 100,
+                        "temperature": 0,
+                        "chat_template_kwargs": {"enable_thinking": False},
+                    },
+                )
+                resp.raise_for_status()
+
+            data = resp.json()
+            text = data["choices"][0]["message"]["content"].strip()
+            return self._parse_topic_response(text)
+
+        except Exception:
+            logger.exception("Topic classifier error — failing open")
+            return TopicResult(status="on_topic")
+
+    @staticmethod
+    def _parse_topic_response(text: str) -> TopicResult:
+        lower = text.lower()
+        if lower.startswith("off_topic"):
+            reason = text.partition(":")[2].strip() or "unrelated to LiteMaaS"
+            return TopicResult(status="off_topic", reason=reason)
+        if lower.startswith("uncertain"):
+            reason = text.partition(":")[2].strip() or "topic relevance unclear"
+            return TopicResult(status="uncertain", reason=reason)
+        return TopicResult(status="on_topic")
+
+    async def check_input(self, message: str, user: AuthenticatedUser) -> RailResult:
+        """Run input guardrails: Llama Guard safety + topic classification in parallel."""
+        safety_result, topic_result = await asyncio.gather(
+            self._check_input_safety(message, user),
+            self._check_topic(message),
+        )
+
+        if safety_result.blocked:
+            return safety_result
+
+        if topic_result.status == "off_topic":
+            logger.info("Topic classifier blocked input: %s", topic_result.reason)
+            return RailResult(blocked=True, response=_INPUT_REFUSAL)
+
+        if topic_result.status == "uncertain":
+            logger.info("Topic classifier uncertain: %s", topic_result.reason)
+            annotation = (
+                f"[TOPIC_REVIEW: {topic_result.reason}. "
+                f"Assess relevance — if off-topic, politely redirect.]\n\n{message}"
+            )
+            return RailResult(blocked=False, response=annotation)
+
+        return RailResult(blocked=False, response=message)
 
     async def check_output(self, message: str, user: AuthenticatedUser) -> RailResult:
         """Run output rails on an agent response."""

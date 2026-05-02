@@ -21,6 +21,10 @@ services:
       - GUARDRAILS_MODEL=${GUARDRAILS_MODEL}
       - GUARDRAILS_LLM_API_BASE=${GUARDRAILS_LLM_API_BASE}
       - GUARDRAILS_LLM_API_KEY=${GUARDRAILS_LLM_API_KEY}
+      # Topic classifier (defaults to agent model settings if not set)
+      - TOPIC_MODEL=${TOPIC_MODEL:-}
+      - TOPIC_LLM_API_BASE=${TOPIC_LLM_API_BASE:-}
+      - TOPIC_LLM_API_KEY=${TOPIC_LLM_API_KEY:-}
       # Monitored LiteLLM instance (queried by tools)
       - LITELLM_API_URL=${LITELLM_API_URL}
       - LITELLM_API_KEY=${LITELLM_API_KEY}

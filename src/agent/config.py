@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     guardrails_llm_api_base: str
     guardrails_llm_api_key: str
 
+    # Topic classifier (defaults to agent model settings if not set)
+    topic_model: str = ""
+    topic_llm_api_base: str = ""
+    topic_llm_api_key: str = ""
+
     # Monitored LiteLLM instance (queried by tools)
     litellm_api_url: str
     litellm_api_key: str
