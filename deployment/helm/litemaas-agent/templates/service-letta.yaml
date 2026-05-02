@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "litemaas-agent.fullname" . }}-letta
+  labels:
+    {{- include "litemaas-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: letta
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.letta.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "litemaas-agent.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: letta

@@ -81,4 +81,5 @@ asyncio_mode = "auto"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "guardrails: marks tests as guardrail scenario tests",
+    "adversarial: marks tests as adversarial guardrail tests (subset of guardrails)",
 ]

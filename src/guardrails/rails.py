@@ -50,6 +50,9 @@ _COLANG_REFUSALS = frozenset(
         "I'm the LiteMaaS platform assistant and I need to stay focused on helping "
         "you with platform questions. How can I help you with models, subscriptions, "
         "or API keys?",
+        # privacy.co (cross-user)
+        "I can only access your own account information. I'm not able to look up other "
+        "users' data. How can I help you with your account?",
     }
 )
 
@@ -177,11 +180,15 @@ class GuardrailsEngine:
 
         from guardrails.actions import (
             check_user_context,
+            check_user_is_admin,
+            regex_check_input_cross_user,
             regex_check_output_pii,
         )
 
         self._rails.register_action(check_user_context, "check_user_context")
         self._rails.register_action(regex_check_output_pii, "regex_check_output_pii")
+        self._rails.register_action(regex_check_input_cross_user, "regex_check_input_cross_user")
+        self._rails.register_action(check_user_is_admin, "check_user_is_admin")
 
         self._topic_model = settings.topic_model or settings.agent_model
         self._topic_api_base = (settings.topic_llm_api_base or settings.agent_llm_api_base).rstrip(
@@ -198,7 +205,10 @@ class GuardrailsEngine:
                 messages=[
                     {"role": "user", "content": message},
                 ],
-                options={"rails": ["input"]},
+                options={
+                    "rails": ["input"],
+                    "context": {"user_role": user.roles[0] if user.roles else "user"},
+                },
             )
             try:
                 content = _extract_nemo_content(response)

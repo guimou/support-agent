@@ -1,0 +1,17 @@
+# Minimal test values for CI helm template validation.
+# Provides required string fields; secrets are injected via --set in CI.
+
+config:
+  litemaasApiUrl: "http://backend:8081"
+  litellmApiUrl: "http://litellm:4000"
+  agentModel: "openai-proxy/test-model"
+  guardrailsModel: "test-model"
+  agentLlmApiBase: "http://litellm:4000"
+  guardrailsLlmApiBase: "http://litellm:4000"
+  logLevel: "debug"
+  guardrailsRequired: false
+
+letta:
+  persistence:
+    enabled: true
+    size: 1Gi

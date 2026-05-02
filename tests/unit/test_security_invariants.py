@@ -5,7 +5,7 @@ These tests verify the non-negotiable security invariants:
 2. user_id from JWT, never from LLM (no user_id function parameter)
 3. Admin tools role-gated (check LETTA_USER_ROLE)
 4. Scoped tokens (standard=LITELLM_USER_API_KEY, admin=LITEMAAS_ADMIN_API_KEY)
-5. Memory writes PII-audited — not yet implemented (Phase 2), test deferred
+5. Memory writes PII-audited (pre-commit enforcement via custom wrappers)
 6. Guardrails fail closed (errors -> refuse)
 """
 
@@ -23,6 +23,7 @@ from tools.litemaas import (
     get_user_api_keys,
     list_models,
 )
+from tools.memory import archival_memory_insert, core_memory_append, core_memory_replace
 
 STANDARD_TOOLS = [
     list_models,
@@ -35,6 +36,7 @@ STANDARD_TOOLS = [
 ]
 ADMIN_TOOLS = [get_global_usage_stats, lookup_user_subscriptions]
 ALL_TOOLS = STANDARD_TOOLS + ADMIN_TOOLS
+MEMORY_TOOLS = [core_memory_append, core_memory_replace, archival_memory_insert]
 
 
 class TestInvariant1ReadOnly:
@@ -47,6 +49,16 @@ class TestInvariant1ReadOnly:
             assert method not in source, f"{func.__name__} uses {method}"  # type: ignore[union-attr]
         if func.__name__ != "get_global_usage_stats":  # type: ignore[union-attr]
             assert "httpx.post" not in source, f"{func.__name__} uses httpx.post"  # type: ignore[union-attr]
+
+    @pytest.mark.parametrize("func", MEMORY_TOOLS, ids=lambda f: f.__name__)
+    def test_memory_tools_use_post_with_pii_gate(self, func: object) -> None:
+        """Memory wrappers may POST (invariant #5 enforcement) but must PII-gate."""
+        source = inspect.getsource(func)  # type: ignore[arg-type]
+        assert "httpx.post" in source
+        assert "_PII_PATTERNS" in source
+        assert "BLOCKED" in source
+        for method in ["httpx.put", "httpx.patch", "httpx.delete"]:
+            assert method not in source, f"{func.__name__} uses {method}"  # type: ignore[union-attr]
 
 
 class TestInvariant2UserIdFromJwt:
@@ -131,3 +143,16 @@ class TestInvariant6GuardrailsFailClosed:
         source = self._read_rails_source()
         assert "failing open" in source
         assert 'status="on_topic"' in source
+
+
+class TestInvariant5MemoryWritePiiAudited:
+    """Invariant 5: Memory writes are PII-audited before commit."""
+
+    def test_memory_tools_contain_pii_check(self) -> None:
+        for func in MEMORY_TOOLS:
+            source = inspect.getsource(func)
+            assert "_PII_PATTERNS" in source, f"{func.__name__} missing _PII_PATTERNS"
+            assert "BLOCKED" in source, f"{func.__name__} missing BLOCKED response"
+            assert "from guardrails" not in source, (
+                f"{func.__name__} imports from guardrails (must be self-contained)"
+            )

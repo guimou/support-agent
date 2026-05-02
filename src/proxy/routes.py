@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -269,6 +270,7 @@ def _extract_assistant_message(
     for msg in messages:
         if user and hasattr(msg, "message_type") and msg.message_type == "tool_call_message":
             _count_memory_write(msg, user)
+            _audit_memory_write_pii(msg, user)
         if hasattr(msg, "message_type") and msg.message_type == "assistant_message":
             if hasattr(msg, "content") and msg.content:
                 text_parts.append(msg.content)
@@ -308,6 +310,55 @@ _MEMORY_WRITE_TOOLS = frozenset(
         "archival_memory_insert",
     }
 )
+
+
+def _audit_memory_write_pii(msg: Any, user: AuthenticatedUser) -> None:
+    """Post-commit audit: scan memory write arguments for PII.
+
+    Defense-in-depth layer. The primary enforcement is in the custom
+    memory tool wrappers (src/tools/memory.py) which reject PII
+    before the write. This catches any PII that bypasses the wrappers
+    (e.g., regex gap, tool registration race).
+    """
+    tool_call = getattr(msg, "tool_call", None)
+    if not tool_call or not hasattr(tool_call, "name"):
+        return
+    if tool_call.name not in _MEMORY_WRITE_TOOLS:
+        return
+
+    arguments = getattr(tool_call, "arguments", None)
+    if not arguments:
+        return
+
+    if isinstance(arguments, str):
+        try:
+            args_dict = json.loads(arguments)
+        except (json.JSONDecodeError, TypeError):
+            args_dict = {"raw": arguments}
+    elif isinstance(arguments, dict):
+        args_dict = arguments
+    else:
+        return
+
+    from guardrails.actions import _PII_PATTERNS
+
+    for key, value in args_dict.items():
+        if not isinstance(value, str):
+            continue
+        for pattern in _PII_PATTERNS:
+            match = re.search(pattern, value)
+            if match:
+                logger.warning(
+                    "SECURITY: PII detected in committed memory write "
+                    "(post-commit audit) by user %s "
+                    "(tool=%s, field=%s, pattern_match=%s...). "
+                    "This should have been blocked by the tool wrapper.",
+                    user.user_id,
+                    tool_call.name,
+                    key,
+                    match.group()[:10],
+                )
+                break
 
 
 def _count_memory_write(msg: Any, user: AuthenticatedUser) -> None:
@@ -537,6 +588,7 @@ async def _stream_response(
 
                 if msg.message_type == "tool_call_message":
                     _count_memory_write(msg, user)
+                    _audit_memory_write_pii(msg, user)
 
                 if msg.message_type == "assistant_message":
                     if isinstance(msg.content, str):

@@ -73,6 +73,17 @@ def _register_tools(client: Letta, agent_id: str) -> dict[str, str]:
     return tool_ids
 
 
+def _register_memory_tools(client: Letta, agent_id: str, tool_ids: dict[str, str]) -> None:
+    """Register PII-audited memory write wrappers, overriding built-in tools."""
+    from tools.memory import archival_memory_insert, core_memory_append, core_memory_replace
+
+    for func in [core_memory_append, core_memory_replace, archival_memory_insert]:
+        tool = client.tools.upsert_from_function(func=func)  # type: ignore[arg-type]
+        tool_ids[tool.name] = tool.id  # type: ignore[index]
+        client.agents.tools.attach(tool.id, agent_id=agent_id)
+        logger.info("Registered memory tool: %s (id=%s)", tool.name, tool.id)
+
+
 SEED_VERSION_MARKER = "litemaas-seed-version:1"
 
 
@@ -125,9 +136,10 @@ def bootstrap_agent(settings: Settings) -> tuple[str, Letta, dict[str, str]]:
                 {"label": "knowledge", "value": KNOWLEDGE_BLOCK, "limit": 5000},
                 {"label": "patterns", "value": PATTERNS_BLOCK, "limit": 5000},
             ],
-            # WARNING: include_base_tools enables core_memory_append and
-            # archival_memory_insert without a PII audit hook (Security
-            # Invariant #5). TODO: Implement PII audit hook (Phase 2).
+            # include_base_tools=True keeps read tools (core_memory_view,
+            # archival_memory_search, conversation_search). Write tools are
+            # overridden by _register_memory_tools() with PII-audited wrappers
+            # (Security Invariant #5).
             include_base_tools=True,
             secrets={
                 "LITEMAAS_API_URL": settings.litemaas_api_url,
@@ -140,6 +152,7 @@ def bootstrap_agent(settings: Settings) -> tuple[str, Letta, dict[str, str]]:
         logger.info("Created agent: %s (id=%s)", agent.name, agent.id)
 
     tool_ids = _register_tools(client, agent.id)
+    _register_memory_tools(client, agent.id, tool_ids)
     _seed_archival_memory(client, agent.id)
 
     return agent.id, client, tool_ids

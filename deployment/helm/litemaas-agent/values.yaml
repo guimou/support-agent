@@ -1,0 +1,121 @@
+# Proxy container
+proxy:
+  replicaCount: 1
+  image:
+    repository: quay.io/litemaas/agent-proxy
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 8400
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  livenessProbe:
+    httpGet:
+      path: /v1/health
+      port: 8400
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+  readinessProbe:
+    httpGet:
+      path: /v1/health
+      port: 8400
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+
+# Letta container
+letta:
+  replicaCount: 1
+  image:
+    repository: letta/letta
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 8283
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  externalPostgres:
+    enabled: false
+    uri: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  livenessProbe:
+    httpGet:
+      path: /v1/health
+      port: 8283
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 5
+  readinessProbe:
+    httpGet:
+      path: /v1/health
+      port: 8283
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+
+# Application config (non-secret env vars)
+config:
+  litemaasApiUrl: ""
+  litellmApiUrl: ""
+  agentModel: ""
+  guardrailsModel: ""
+  agentLlmApiBase: ""
+  guardrailsLlmApiBase: ""
+  topicModel: ""
+  topicLlmApiBase: ""
+  logLevel: "info"
+  corsOrigins: ""
+  rateLimitRpm: 30
+  rateLimitMemoryWritesPerHour: 20
+  outputRailChunkSize: 200
+  outputRailOverlap: 50
+  guardrailsRequired: true
+  streamLockTimeoutSeconds: 30
+  streamMaxDurationSeconds: 120
+  jwtIssuer: ""
+  jwtAudience: ""
+
+# Secrets (must be provided unless existingSecret is set)
+secrets:
+  jwtSecret: ""
+  litellmApiKey: ""
+  litellmUserApiKey: ""
+  litemaasAdminApiKey: ""
+  agentLlmApiKey: ""
+  guardrailsLlmApiKey: ""
+  topicLlmApiKey: ""
+
+# Use an existing Kubernetes secret instead of creating one (e.g., from Vault)
+existingSecret: ""
+
+# Subchart mode: when installed as a dependency of the LiteMaaS umbrella chart
+subchart:
+  enabled: false
+  litemaasBackendService: ""
+  litellmService: ""
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8400
+
+# Pod annotations (e.g., for Prometheus scraping)
+podAnnotations: {}
+
+# Scheduling
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -28,6 +28,8 @@ rails:
   input:
     flows:
       - llama guard check input
+      - cross user access from intent
+      - check cross user access
 
   output:
     flows:

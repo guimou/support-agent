@@ -1,0 +1,27 @@
+LiteMaaS Agent Assistant has been deployed.
+
+1. Get the proxy service address:
+   {{- if eq .Values.service.type "ClusterIP" }}
+   kubectl port-forward svc/{{ include "litemaas-agent.fullname" . }}-proxy {{ .Values.service.port }}:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+   curl http://localhost:{{ .Values.service.port }}/v1/health
+   {{- else if eq .Values.service.type "NodePort" }}
+   export NODE_PORT=$(kubectl get svc {{ include "litemaas-agent.fullname" . }}-proxy -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[0].nodePort}')
+   export NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+   curl http://$NODE_IP:$NODE_PORT/v1/health
+   {{- end }}
+
+2. Check pod status:
+   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+3. View proxy logs:
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=proxy --tail=100
+
+4. Send a test request (requires a valid JWT):
+   curl -X POST http://localhost:{{ .Values.service.port }}/v1/chat \
+     -H "Authorization: Bearer <your-jwt>" \
+     -H "Content-Type: application/json" \
+     -d '{"message": "Hello, what models are available?"}'
+
+NOTE: The proxy runs as a single replica (replicas=1). This is required for
+credential isolation — the asyncio.Lock that serializes per-user secret injection
+only works within a single event loop. Do not scale beyond 1 replica.

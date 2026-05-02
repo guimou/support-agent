@@ -69,3 +69,69 @@ jobs:
 
       - name: Run unit tests
         run: uv run pytest tests/unit/ -v --tb=short
+
+  helm-lint:
+    name: Helm Chart Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Lint chart
+        run: helm lint deployment/helm/litemaas-agent/
+
+      - name: Template chart (test values)
+        run: |
+          helm template litemaas-agent deployment/helm/litemaas-agent/ \
+            -f deployment/helm/litemaas-agent/values-test.yaml \
+            --set secrets.jwtSecret=test \
+            --set secrets.litellmApiKey=test \
+            --set secrets.litellmUserApiKey=test \
+            --set secrets.agentLlmApiKey=test \
+            --set secrets.guardrailsLlmApiKey=test
+
+      - name: Kustomize build (dev)
+        run: kubectl kustomize deployment/kustomize/overlays/dev
+
+      - name: Kustomize build (staging)
+        run: kubectl kustomize deployment/kustomize/overlays/staging
+
+  guardrails-tests:
+    name: Adversarial Guardrail Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run adversarial guardrail tests
+        env:
+          GUARDRAILS_MODEL: ${{ secrets.GUARDRAILS_MODEL }}
+          GUARDRAILS_LLM_API_BASE: ${{ secrets.GUARDRAILS_LLM_API_BASE }}
+          GUARDRAILS_LLM_API_KEY: ${{ secrets.GUARDRAILS_LLM_API_KEY }}
+          AGENT_MODEL: ${{ secrets.AGENT_MODEL }}
+          AGENT_LLM_API_BASE: ${{ secrets.AGENT_LLM_API_BASE }}
+          AGENT_LLM_API_KEY: ${{ secrets.AGENT_LLM_API_KEY }}
+          JWT_SECRET: test-secret-for-ci-only
+        run: >
+          uv run pytest tests/guardrails/ -v -m adversarial
+          --tb=short --junitxml=guardrails-results.xml
+
+      - name: Upload guardrail test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardrails-results
+          path: guardrails-results.xml

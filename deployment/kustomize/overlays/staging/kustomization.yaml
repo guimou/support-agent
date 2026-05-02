@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: quay.io/litemaas/agent-proxy
+    newTag: staging
+  - name: letta/letta
+    newTag: latest
+
+patches:
+  - path: patch-resources.yaml
+    target:
+      kind: Deployment
+      name: litemaas-agent-proxy
+  - path: patch-letta-resources.yaml
+    target:
+      kind: Deployment
+      name: litemaas-agent-letta
+  - path: patch-config.yaml
+    target:
+      kind: ConfigMap
+      name: litemaas-agent-config

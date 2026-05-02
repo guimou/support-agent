@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "litemaas-agent.fullname" . }}-proxy
+  labels:
+    {{- include "litemaas-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  # MUST be 1 — credential isolation depends on a single asyncio.Lock event loop.
+  # HPA is intentionally omitted from this chart for the same reason.
+  replicas: 1
+  strategy:
+    # Recreate avoids a dual-instance window during updates, which would allow
+    # concurrent requests to race on the shared secrets lock.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "litemaas-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: proxy
+  template:
+    metadata:
+      labels:
+        {{- include "litemaas-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: proxy
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-letta
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until wget -qO- http://{{ include "litemaas-agent.fullname" . }}-letta:{{ .Values.letta.port }}/v1/health; do
+                echo "Waiting for Letta..."; sleep 2
+              done
+      containers:
+        - name: proxy
+          image: "{{ .Values.proxy.image.repository }}:{{ .Values.proxy.image.tag }}"
+          imagePullPolicy: {{ .Values.proxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.proxy.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "litemaas-agent.fullname" . }}-config
+            - secretRef:
+                name: {{ include "litemaas-agent.secretName" . }}
+          livenessProbe:
+            {{- toYaml .Values.proxy.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.proxy.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.proxy.resources | nindent 12 }}
