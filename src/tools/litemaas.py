@@ -171,10 +171,10 @@ def get_user_api_keys() -> str:
 
 
 def get_usage_stats() -> str:
-    """Get the current user's usage statistics and budget info.
+    """Get the current user's usage statistics for the last 30 days.
 
     Returns:
-        Usage summary including budget, spend, and per-model breakdown.
+        Usage summary including request counts, tokens, cost, and per-model breakdown.
     """
     import os
     from datetime import datetime, timedelta, timezone
@@ -191,45 +191,25 @@ def get_usage_stats() -> str:
     if not token:
         raise RuntimeError("LITELLM_USER_API_KEY not set")
 
-    # Fetch budget info
-    budget_resp = httpx.get(
-        f"{base_url}/api/v1/usage/budget",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10.0,
-    )
-    try:
-        budget_resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise RuntimeError(f"Budget endpoint returned HTTP {exc.response.status_code}") from None
-    budget = budget_resp.json()
+    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    start_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
-    # Fetch usage summary (last 30 days)
-    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")  # noqa: UP017
-    start_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")  # noqa: UP017
-    usage_resp = httpx.get(
+    response = httpx.get(
         f"{base_url}/api/v1/usage/summary",
         params={"startDate": start_date, "endDate": end_date},
         headers={"Authorization": f"Bearer {token}"},
         timeout=10.0,
     )
     try:
-        usage_resp.raise_for_status()
+        response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(
             f"Usage summary endpoint returned HTTP {exc.response.status_code}"
         ) from None
-    usage = usage_resp.json()
-
-    max_budget = budget.get("maxBudget")
-    spend = budget.get("currentSpend", 0)
-    budget_part = f"${max_budget:.2f}" if max_budget is not None else "unlimited"
-    budget_str = f"${spend:.2f} / {budget_part}"
+    usage = response.json()
 
     totals = usage.get("totals", {})
     lines = [
-        f"Budget: {budget_str} ({budget.get('budgetDuration', 'no duration')})",
-        f"Budget resets: {budget.get('budgetResetAt', 'never')}",
-        "",
         "Last 30 days usage:",
         f"  Requests: {totals.get('requests', 0):,}",
         f"  Tokens: {totals.get('tokens', 0):,}",

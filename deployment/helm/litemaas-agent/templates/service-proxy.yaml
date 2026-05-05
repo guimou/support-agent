@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "litemaas-agent.fullname" . }}-proxy
+  labels:
+    {{- include "litemaas-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "litemaas-agent.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy

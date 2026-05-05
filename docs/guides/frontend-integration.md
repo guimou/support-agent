@@ -118,7 +118,9 @@ interface ChatMessage {
 
 **Non-streaming**: Use Axios with JWT interceptor (existing `apiClient`).
 
-**Streaming**: Use raw `fetch()` (Axios doesn't support `ReadableStream`):
+**Streaming**: Use raw `fetch()` (Axios doesn't support `ReadableStream`).
+
+**Important**: When input is blocked by guardrails, the endpoint returns `application/json` (not SSE). Check the `Content-Type` header to distinguish:
 
 ```typescript
 const response = await fetch(`${baseUrl}/api/v1/assistant/chat/stream`, {
@@ -131,6 +133,15 @@ const response = await fetch(`${baseUrl}/api/v1/assistant/chat/stream`, {
   signal: abortController.signal,
 });
 
+// Input blocked → JSON response (no stream)
+const contentType = response.headers.get('content-type') || '';
+if (contentType.includes('application/json')) {
+  const data = await response.json();
+  // data = { message: "refusal text", conversation_id: null, blocked: true }
+  return data;
+}
+
+// Normal response → SSE stream
 const reader = response.body!.getReader();
 const decoder = new TextDecoder();
 let buffer = '';
@@ -139,7 +150,25 @@ while (true) {
   const { done, value } = await reader.read();
   if (done) break;
   buffer += decoder.decode(value, { stream: true });
-  // Parse SSE lines...
+
+  // Split on double newlines (SSE event boundaries)
+  const lines = buffer.split('\n\n');
+  buffer = lines.pop() || '';
+
+  for (const line of lines) {
+    if (!line.startsWith('data: ')) continue;
+    const event = JSON.parse(line.slice(6));
+
+    if ('chunk' in event) {
+      // Append event.chunk to display, track by event.index
+    } else if ('retract_chunk' in event) {
+      // Replace chunk at event.retract_chunk with event.placeholder
+    } else if ('error' in event) {
+      // Handle error; event.retryable hints whether to retry
+    } else if ('done' in event) {
+      // Stream complete: event.conversation_id, event.safety_notice
+    }
+  }
 }
 ```
 
@@ -215,8 +244,12 @@ The widget checks agent availability on mount:
 const checkAgentHealth = async () => {
   try {
     const response = await apiClient.get('/assistant/health');
-    setAgentAvailable(response.status === 'healthy');
+    // "healthy" or "degraded" both mean the agent is functional
+    setAgentAvailable(
+      response.status === 'healthy' || response.status === 'degraded'
+    );
   } catch {
+    // Network error or 503 (unhealthy / not ready)
     setAgentAvailable(false);
   }
 };

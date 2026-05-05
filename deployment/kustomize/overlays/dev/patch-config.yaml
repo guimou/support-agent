@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litemaas-agent-config
+data:
+  LOG_LEVEL: "debug"
+  GUARDRAILS_REQUIRED: "false"

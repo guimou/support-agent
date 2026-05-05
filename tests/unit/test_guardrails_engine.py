@@ -98,9 +98,9 @@ class TestIsBlockedInput:
         "or API keys?"
     )
 
-    def test_empty_response_is_blocked(self):
-        assert GuardrailsEngine._is_blocked_input("") is True
-        assert GuardrailsEngine._is_blocked_input("   ") is True
+    def test_empty_response_is_not_blocked(self):
+        assert GuardrailsEngine._is_blocked_input("") is False
+        assert GuardrailsEngine._is_blocked_input("   ") is False
 
     def test_none_content_is_blocked(self):
         assert GuardrailsEngine._is_blocked_input(None) is True

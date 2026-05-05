@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: litemaas-agent-letta
+  labels:
+    app.kubernetes.io/component: letta
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8283
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: litemaas-agent
+    app.kubernetes.io/component: letta

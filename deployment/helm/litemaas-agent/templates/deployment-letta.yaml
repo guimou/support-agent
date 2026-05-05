@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "litemaas-agent.fullname" . }}-letta
+  labels:
+    {{- include "litemaas-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: letta
+spec:
+  # Single replica required — Letta uses embedded PostgreSQL with RWO storage.
+  # RollingUpdate would require two pods to run simultaneously, which is not
+  # possible with ReadWriteOnce PVCs.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "litemaas-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: letta
+  template:
+    metadata:
+      labels:
+        {{- include "litemaas-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: letta
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: letta
+          image: "{{ .Values.letta.image.repository }}:{{ .Values.letta.image.tag }}"
+          imagePullPolicy: {{ .Values.letta.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.letta.port }}
+              protocol: TCP
+          {{- if .Values.letta.externalPostgres.enabled }}
+          env:
+            - name: LETTA_PG_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "litemaas-agent.secretName" . }}
+                  key: LETTA_PG_URI
+          {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.letta.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.letta.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.letta.resources | nindent 12 }}
+          {{- if and .Values.letta.persistence.enabled (not .Values.letta.externalPostgres.enabled) }}
+          volumeMounts:
+            - name: letta-data
+              mountPath: /data
+          {{- end }}
+      {{- if and .Values.letta.persistence.enabled (not .Values.letta.externalPostgres.enabled) }}
+      volumes:
+        - name: letta-data
+          persistentVolumeClaim:
+            claimName: {{ include "litemaas-agent.fullname" . }}-letta-data
+      {{- end }}

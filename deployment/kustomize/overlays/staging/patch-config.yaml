@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litemaas-agent-config
+data:
+  LOG_LEVEL: "info"
+  GUARDRAILS_REQUIRED: "true"
+  CORS_ORIGINS: "https://staging.litemaas.io"

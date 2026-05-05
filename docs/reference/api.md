@@ -12,22 +12,20 @@ Health check for container probes and frontend availability detection.
 
 **Authentication**: Not required
 
-**Response**:
+**Response** (HTTP 200 when functional, HTTP 503 when not):
 ```json
 {
   "status": "healthy",
   "agent": "connected",
-  "agent_id": "agent-uuid",
   "guardrails": "active"
 }
 ```
 
 | Field | Values | Description |
 |---|---|---|
-| `status` | `healthy`, `unhealthy` | Overall status |
-| `agent` | `connected`, `disconnected` | Letta connection status |
-| `agent_id` | UUID string or `null` | Bootstrapped agent identifier |
-| `guardrails` | `active`, `disabled`, `failed` | Guardrails engine status |
+| `status` | `healthy`, `degraded`, `unhealthy`, `not ready` | Overall status. `healthy` = agent + guardrails OK. `degraded` = agent OK, guardrails inactive (optional mode). `unhealthy` = required guardrails failed (503). `not ready` = agent not initialized (503). |
+| `agent` | `connected`, `not initialized` | Letta agent runtime status |
+| `guardrails` | `active`, `inactive` | Guardrails engine status |
 
 ### `POST /v1/chat`
 
@@ -119,9 +117,11 @@ Per-user rate limiting at the proxy layer:
 - `RATE_LIMIT_RPM` (default: 30) — max chat requests per user per minute
 - `RATE_LIMIT_MEMORY_WRITES_PER_HOUR` (default: 20) — max memory write operations per user per hour
 
-## Auto-Generated Docs
+## OpenAPI Specification
 
-When the server is running:
+A static enriched OpenAPI spec (with auth, all error responses, and streaming event schemas) is available at [`openapi.json`](openapi.json). This is the canonical API contract for integrating with the agent.
+
+When the server is running, auto-generated docs are also available:
 - **Swagger UI**: http://localhost:8400/docs
 - **ReDoc**: http://localhost:8400/redoc
-- **OpenAPI JSON**: http://localhost:8400/openapi.json
+- **OpenAPI JSON**: http://localhost:8400/openapi.json (runtime-generated, less detailed than the static spec)

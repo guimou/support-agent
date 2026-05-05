@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -131,9 +132,9 @@ async def chat(
     """Send a message to the agent and get a response.
 
     Flow:
-    1. Run input guardrails
-    2. Inject user context into Letta agent secrets
-    3. Get or create conversation for this user
+    1. Validate conversation ownership (auth — before content analysis)
+    2. Run input guardrails
+    3. Inject user context into Letta agent secrets
     4. Send message to Letta via conversation API
     5. Run output guardrails on response
     6. Return response
@@ -148,7 +149,27 @@ async def chat(
             status_code=503, detail="Service temporarily unavailable — guardrails not initialized"
         )
 
-    # 1. Input guardrails
+    # 1. Validate conversation ownership (auth check — before content analysis)
+    if request.conversation_id:
+        try:
+            owns = agent_state.validate_conversation_ownership(
+                request.conversation_id, user.user_id
+            )
+        except ConversationLookupError:
+            logger.exception(
+                "Could not verify conversation ownership for user %s", user.user_id
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Unable to verify conversation ownership",
+            ) from None
+        if not owns:
+            raise HTTPException(
+                status_code=403,
+                detail="Conversation does not belong to this user",
+            )
+
+    # 2. Input guardrails
     input_result = await guardrails.check_input(request.message, user)
     if input_result.blocked:
         return ChatResponse(
@@ -157,7 +178,7 @@ async def chat(
             blocked=True,
         )
 
-    # 2. Inject user context + get/create conversation + send message (serialized)
+    # 3. Inject user context + get/create conversation + send message (serialized)
     async with _secrets_lock:
         try:
             agent_state.client.agents.update(
@@ -165,6 +186,7 @@ async def chat(
                 secrets={
                     "LETTA_USER_ID": user.user_id,
                     "LETTA_USER_ROLE": "admin" if user.is_admin else "user",
+                    "LETTA_AGENT_ID": agent_state.agent_id,
                     "LITEMAAS_API_URL": agent_state.settings.litemaas_api_url,
                     "LITELLM_API_URL": agent_state.settings.litellm_api_url,
                     "LITELLM_USER_API_KEY": agent_state.settings.litellm_user_api_key,
@@ -180,25 +202,8 @@ async def chat(
             logger.exception("Failed to inject user secrets for user %s", user.user_id)
             raise HTTPException(status_code=502, detail="Failed to prepare agent context") from None
 
-        # 3. Get or create conversation (with ownership validation)
+        # Get or create conversation
         if request.conversation_id:
-            try:
-                owns = agent_state.validate_conversation_ownership(
-                    request.conversation_id, user.user_id
-                )
-            except ConversationLookupError:
-                logger.exception(
-                    "Could not verify conversation ownership for user %s", user.user_id
-                )
-                raise HTTPException(
-                    status_code=502,
-                    detail="Unable to verify conversation ownership",
-                ) from None
-            if not owns:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Conversation does not belong to this user",
-                )
             conversation_id = request.conversation_id
         else:
             try:
@@ -222,7 +227,7 @@ async def chat(
     # 5. Extract assistant message from response
     try:
         assistant_message = _extract_assistant_message(letta_response, user)
-    except ValueError:
+    except Exception:
         logger.exception("Failed to parse Letta response for user %s", user.user_id)
         raise HTTPException(
             status_code=502, detail="Agent response could not be processed"
@@ -269,6 +274,7 @@ def _extract_assistant_message(
     for msg in messages:
         if user and hasattr(msg, "message_type") and msg.message_type == "tool_call_message":
             _count_memory_write(msg, user)
+            _audit_memory_write_pii(msg, user)
         if hasattr(msg, "message_type") and msg.message_type == "assistant_message":
             if hasattr(msg, "content") and msg.content:
                 text_parts.append(msg.content)
@@ -308,6 +314,55 @@ _MEMORY_WRITE_TOOLS = frozenset(
         "archival_memory_insert",
     }
 )
+
+
+def _audit_memory_write_pii(msg: Any, user: AuthenticatedUser) -> None:
+    """Post-commit audit: scan memory write arguments for PII.
+
+    Defense-in-depth layer. The primary enforcement is in the custom
+    memory tool wrappers (src/tools/memory.py) which reject PII
+    before the write. This catches any PII that bypasses the wrappers
+    (e.g., regex gap, tool registration race).
+    """
+    tool_call = getattr(msg, "tool_call", None)
+    if not tool_call or not hasattr(tool_call, "name"):
+        return
+    if tool_call.name not in _MEMORY_WRITE_TOOLS:
+        return
+
+    arguments = getattr(tool_call, "arguments", None)
+    if not arguments:
+        return
+
+    if isinstance(arguments, str):
+        try:
+            args_dict = json.loads(arguments)
+        except (json.JSONDecodeError, TypeError):
+            args_dict = {"raw": arguments}
+    elif isinstance(arguments, dict):
+        args_dict = arguments
+    else:
+        return
+
+    from guardrails.actions import _PII_PATTERNS
+
+    for key, value in args_dict.items():
+        if not isinstance(value, str):
+            continue
+        for pattern in _PII_PATTERNS:
+            match = re.search(pattern, value)
+            if match:
+                logger.warning(
+                    "SECURITY: PII detected in committed memory write "
+                    "(post-commit audit) by user %s "
+                    "(tool=%s, field=%s, pattern_match=%s...). "
+                    "This should have been blocked by the tool wrapper.",
+                    user.user_id,
+                    tool_call.name,
+                    key,
+                    match.group()[:10],
+                )
+                break
 
 
 def _count_memory_write(msg: Any, user: AuthenticatedUser) -> None:
@@ -376,7 +431,27 @@ async def chat_stream(
             status_code=503, detail="Service temporarily unavailable — guardrails not initialized"
         )
 
-    # 1. Input guardrails (safe outside lock — no agent secrets involved)
+    # 1. Validate conversation ownership (auth check — before content analysis)
+    if request.conversation_id:
+        try:
+            owns = agent_state.validate_conversation_ownership(
+                request.conversation_id, user.user_id
+            )
+        except ConversationLookupError:
+            logger.exception(
+                "Could not verify conversation ownership for user %s", user.user_id
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Unable to verify conversation ownership",
+            ) from None
+        if not owns:
+            raise HTTPException(
+                status_code=403,
+                detail="Conversation does not belong to this user",
+            )
+
+    # 2. Input guardrails (safe outside lock — no agent secrets involved)
     input_result = await guardrails.check_input(request.message, user)
     if input_result.blocked:
         return JSONResponse(
@@ -387,7 +462,7 @@ async def chat_stream(
             },
         )
 
-    # 2. Acquire secrets lock BEFORE returning StreamingResponse.
+    # 3. Acquire secrets lock BEFORE returning StreamingResponse.
     #    The generator releases it in its finally block, so the lock is held
     #    across the entire stream lifetime (secret injection → stream consumption).
     try:
@@ -404,6 +479,7 @@ async def chat_stream(
                 secrets={
                     "LETTA_USER_ID": user.user_id,
                     "LETTA_USER_ROLE": "admin" if user.is_admin else "user",
+                    "LETTA_AGENT_ID": agent_state.agent_id,
                     "LITEMAAS_API_URL": agent_state.settings.litemaas_api_url,
                     "LITELLM_API_URL": agent_state.settings.litellm_api_url,
                     "LITELLM_USER_API_KEY": agent_state.settings.litellm_user_api_key,
@@ -420,23 +496,6 @@ async def chat_stream(
             raise HTTPException(status_code=502, detail="Failed to prepare agent context") from None
 
         if request.conversation_id:
-            try:
-                owns = agent_state.validate_conversation_ownership(
-                    request.conversation_id, user.user_id
-                )
-            except ConversationLookupError:
-                logger.exception(
-                    "Could not verify conversation ownership for user %s", user.user_id
-                )
-                raise HTTPException(
-                    status_code=502,
-                    detail="Unable to verify conversation ownership",
-                ) from None
-            if not owns:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Conversation does not belong to this user",
-                )
             conversation_id = request.conversation_id
         else:
             try:
@@ -537,6 +596,7 @@ async def _stream_response(
 
                 if msg.message_type == "tool_call_message":
                     _count_memory_write(msg, user)
+                    _audit_memory_write_pii(msg, user)
 
                 if msg.message_type == "assistant_message":
                     if isinstance(msg.content, str):

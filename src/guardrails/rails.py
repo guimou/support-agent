@@ -50,6 +50,9 @@ _COLANG_REFUSALS = frozenset(
         "I'm the LiteMaaS platform assistant and I need to stay focused on helping "
         "you with platform questions. How can I help you with models, subscriptions, "
         "or API keys?",
+        # privacy.co (cross-user)
+        "I can only access your own account information. I'm not able to look up other "
+        "users' data. How can I help you with your account?",
     }
 )
 
@@ -57,6 +60,11 @@ _INPUT_REFUSAL = (
     "I'm the LiteMaaS platform assistant. I can help you with "
     "model subscriptions, API keys, usage questions, and platform "
     "troubleshooting. How can I help?"
+)
+
+_CROSS_USER_REFUSAL = (
+    "I can only access your own account information. I'm not able to look up "
+    "other users' data. How can I help you with your account?"
 )
 
 _OUTPUT_REFUSAL = (
@@ -95,19 +103,27 @@ class TopicResult:
     reason: str = ""
 
 
-def _extract_nemo_content(response: object) -> str:
-    """Extract text content from a NeMo Guardrails response."""
+def _extract_nemo_content(response: object) -> str | None:
+    """Extract text content from a NeMo Guardrails response.
+
+    Returns None when the response format is unrecognised (caller should
+    treat as fail-closed).  Returns ``""`` when the response was successfully
+    parsed but contained no text — which is the normal "input rails passed"
+    case for input-only evaluation.
+    """
     if isinstance(response, str):
         return response
     if isinstance(response, dict):
-        content = response.get("content") or response.get("response")
+        content = response.get("content")
+        if content is None:
+            content = response.get("response")
         if content is None:
             logger.error(
                 "NeMo dict response has no 'content' or 'response' key (keys=%s) "
-                "— returning empty string, which will trigger fail-closed blocking",
+                "— returning None to trigger fail-closed blocking",
                 list(response.keys()),
             )
-            return ""
+            return None
         return str(content)
     if hasattr(response, "response") and isinstance(response.response, list):
         for msg in response.response:
@@ -133,9 +149,12 @@ class GuardrailsEngine:
 
     @staticmethod
     def _is_blocked_input(content: str | None) -> bool:
-        if not content or not content.strip():
+        if content is None:
             return True
-        return content.strip() in _COLANG_REFUSALS
+        stripped = content.strip()
+        if not stripped:
+            return False
+        return stripped in _COLANG_REFUSALS
 
     @staticmethod
     def _is_blocked_output(original: str, content: str | None) -> bool:
@@ -177,11 +196,15 @@ class GuardrailsEngine:
 
         from guardrails.actions import (
             check_user_context,
+            check_user_is_admin,
+            regex_check_input_cross_user,
             regex_check_output_pii,
         )
 
         self._rails.register_action(check_user_context, "check_user_context")
         self._rails.register_action(regex_check_output_pii, "regex_check_output_pii")
+        self._rails.register_action(regex_check_input_cross_user, "regex_check_input_cross_user")
+        self._rails.register_action(check_user_is_admin, "check_user_is_admin")
 
         self._topic_model = settings.topic_model or settings.agent_model
         self._topic_api_base = (settings.topic_llm_api_base or settings.agent_llm_api_base).rstrip(
@@ -198,7 +221,10 @@ class GuardrailsEngine:
                 messages=[
                     {"role": "user", "content": message},
                 ],
-                options={"rails": ["input"]},
+                options={
+                    "rails": ["input"],
+                    "context": {"user_role": "admin" if user.is_admin else "user"},
+                },
             )
             try:
                 content = _extract_nemo_content(response)
@@ -265,6 +291,14 @@ class GuardrailsEngine:
 
     async def check_input(self, message: str, user: AuthenticatedUser) -> RailResult:
         """Run input guardrails: Llama Guard safety + topic classification in parallel."""
+        from guardrails.actions import _regex_check_input_cross_user_impl
+
+        if not user.is_admin:
+            ctx = {"user_message": message, "user_role": "user"}
+            if not _regex_check_input_cross_user_impl(ctx):
+                logger.info("Cross-user regex blocked input")
+                return RailResult(blocked=True, response=_CROSS_USER_REFUSAL)
+
         results = await asyncio.gather(
             self._check_input_safety(message, user),
             self._check_topic(message),

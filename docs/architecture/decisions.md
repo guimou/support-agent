@@ -34,6 +34,17 @@
 | 10 | Service token scoping | Two tokens: `LITELLM_USER_API_KEY` (scoped) + `LITELLM_API_KEY` (master, admin only). |
 | 11 | JWT signing | HS256 for PoC. Production should migrate to RS256 asymmetric signing. |
 | 12 | Rate limiting | `RATE_LIMIT_RPM` for chat, `RATE_LIMIT_MEMORY_WRITES_PER_HOUR` for memory. |
+| 13 | Privacy rule approach | Colang flow with regex + keyword detection, role-aware. Regex catches concrete patterns; intent-based flow catches rephrased attempts. Admin bypass: `user_role == "admin"` skips cross-user check. |
+| 14 | Output PII deny-list expansion | Added UUID-4, phone numbers (US), IPv4 addresses, credit card patterns to `_PII_PATTERNS`. |
+| 15 | Adversarial test framework | pytest parametrize with categories + conftest fixtures for guardrails engine. Tests organized by attack category. |
+| 16 | Red-team test execution | Integration tests against live stack (`podman-compose up`). Marked `@pytest.mark.integration`. |
+| 17 | Archival memory isolation | Defer split architecture; strengthen PII audit instead. Per-user tiers require significant Letta API changes. Revisit in Phase 4+. |
+| 18 | Helm chart scope | Two-deployment chart with optional subchart mode. No HPA — single replica enforced for credential isolation. |
+| 19 | Kustomize overlay strategy | Base + dev + staging overlays. |
+| 20 | PII audit hook enforcement | Custom memory tool wrappers with pre-commit PII scan + proxy-side post-commit audit. Wrappers replace Letta's built-in tools via `upsert_from_function()`. |
+| 21 | Fail-closed tuning | Output rail chunk overlap tuning via integration benchmarks. Defaults (200/50) kept pending live-stack validation. |
+| 22 | Security review format | Markdown document in `docs/architecture/security-review.md`. Living document. |
+| 23 | Invariant #1 ↔ #5 tension | Memory wrappers are a second documented POST exception to invariant #1. Distinguished from external API tools — internal memory wrappers POST to Letta API, gated by PII pre-check. |
 
 ## Open Questions
 
@@ -43,6 +54,6 @@
 
 3. **Per-conversation tool registration**: The security model requires admin tools only on admin conversations. Letta supports per-conversation secrets but not per-conversation tool sets — so all tools are registered on the single shared agent, and admin tools validate role at runtime (defense-in-depth fallback).
 
-4. **Archival memory isolation granularity**: Single shared store currently. Splitting into shared read-only + per-user writable tiers would improve isolation. Evaluate during Phase 3.
+4. **Archival memory isolation granularity**: Single shared store with PII-audited writes. Split architecture (shared-RO + per-user-RW) evaluated and deferred — see `docs/architecture/archival-memory-evaluation.md`.
 
 5. **Letta `conversation_search` isolation**: Security depends on search respecting conversation boundaries. Integration tests validate this. Configuration options affecting search scope need investigation.

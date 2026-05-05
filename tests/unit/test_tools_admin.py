@@ -201,7 +201,9 @@ class TestGetGlobalUsageStats:
             get_global_usage_stats()
         mock_post.assert_called_once()
         call_args = mock_post.call_args
-        assert call_args[1]["json"] == {}
+        body = call_args[1]["json"]
+        assert "startDate" in body
+        assert "endDate" in body
 
 
 class TestLookupUserSubscriptions:

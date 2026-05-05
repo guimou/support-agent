@@ -1,0 +1,27 @@
+# Staging overrides — applied on top of values.yaml
+# Usage: helm install litemaas-agent ./deployment/helm/litemaas-agent -f values-staging.yaml
+
+proxy:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+letta:
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+config:
+  logLevel: "info"
+  guardrailsRequired: true
+  corsOrigins: "https://staging.litemaas.io"
+  rateLimitRpm: 30
+  rateLimitMemoryWritesPerHour: 20

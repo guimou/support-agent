@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "litemaas-agent.fullname" . }}-config
+  labels:
+    {{- include "litemaas-agent.labels" . | nindent 4 }}
+data:
+  # Service URLs — subchart mode uses parent chart service names
+  {{- if .Values.subchart.enabled }}
+  LITEMAAS_API_URL: {{ .Values.subchart.litemaasBackendService | quote }}
+  LITELLM_API_URL: {{ .Values.subchart.litellmService | quote }}
+  {{- else }}
+  LITEMAAS_API_URL: {{ .Values.config.litemaasApiUrl | quote }}
+  LITELLM_API_URL: {{ .Values.config.litellmApiUrl | quote }}
+  {{- end }}
+  LETTA_SERVER_URL: "http://{{ include "litemaas-agent.fullname" . }}-letta:{{ .Values.letta.port }}"
+  # LLM providers
+  AGENT_MODEL: {{ .Values.config.agentModel | quote }}
+  AGENT_LLM_API_BASE: {{ .Values.config.agentLlmApiBase | quote }}
+  GUARDRAILS_MODEL: {{ .Values.config.guardrailsModel | quote }}
+  GUARDRAILS_LLM_API_BASE: {{ .Values.config.guardrailsLlmApiBase | quote }}
+  TOPIC_MODEL: {{ .Values.config.topicModel | quote }}
+  TOPIC_LLM_API_BASE: {{ .Values.config.topicLlmApiBase | quote }}
+  # Runtime config
+  PROXY_PORT: {{ .Values.proxy.port | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  GUARDRAILS_REQUIRED: {{ .Values.config.guardrailsRequired | quote }}
+  RATE_LIMIT_RPM: {{ .Values.config.rateLimitRpm | quote }}
+  RATE_LIMIT_MEMORY_WRITES_PER_HOUR: {{ .Values.config.rateLimitMemoryWritesPerHour | quote }}
+  OUTPUT_RAIL_CHUNK_SIZE: {{ .Values.config.outputRailChunkSize | quote }}
+  OUTPUT_RAIL_OVERLAP: {{ .Values.config.outputRailOverlap | quote }}
+  STREAM_LOCK_TIMEOUT_SECONDS: {{ .Values.config.streamLockTimeoutSeconds | quote }}
+  STREAM_MAX_DURATION_SECONDS: {{ .Values.config.streamMaxDurationSeconds | quote }}
+  JWT_ISSUER: {{ .Values.config.jwtIssuer | quote }}
+  JWT_AUDIENCE: {{ .Values.config.jwtAudience | quote }}

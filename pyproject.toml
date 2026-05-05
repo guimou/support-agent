@@ -81,4 +81,12 @@ asyncio_mode = "auto"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "guardrails: marks tests as guardrail scenario tests",
+    "adversarial: marks tests as adversarial guardrail tests (subset of guardrails)",
+]
+filterwarnings = [
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince211",
+    "ignore:Use 'nim_base_url' instead:DeprecationWarning:nemoguardrails",
+    "ignore:Parameters.*should be specified explicitly:UserWarning:nemoguardrails",
+    "ignore:There is no current event loop:DeprecationWarning:nemoguardrails",
 ]

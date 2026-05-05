@@ -1,0 +1,611 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "LiteMaaS Agent Proxy",
+        "description": "Proxy server for the LiteMaaS AI Agent Assistant. Provides platform support via an intelligent agent backed by Letta, with NeMo Guardrails for input/output safety.\n\n## Authentication\n\nAll chat endpoints require a JWT Bearer token in the `Authorization` header. The token must be HS256-signed with the shared `JWT_SECRET` and contain the required claims (`userId`, `username`, `email`, `roles`).\n\n## Streaming Protocol\n\nThe `/v1/chat/stream` endpoint uses POST-based SSE (not `EventSource`). The client must consume via `fetch()` + `ReadableStream`. See the `StreamEvent` schema and endpoint description for the custom event format.\n\n## Rate Limiting\n\nPer-user rate limits are enforced on chat endpoints. When exceeded, a `429` response is returned with `Retry-After` and `X-RateLimit-Remaining` headers.",
+        "version": "0.1.0",
+        "contact": {
+            "name": "LiteMaaS Team"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8400",
+            "description": "Local development (direct)"
+        },
+        {
+            "url": "http://agent:8400",
+            "description": "Container-to-container (Docker/Podman network)"
+        }
+    ],
+    "security": [
+        {
+            "BearerAuth": []
+        }
+    ],
+    "paths": {
+        "/v1/health": {
+            "get": {
+                "summary": "Health Check",
+                "description": "Health check for container probes and frontend availability detection.\n\nNo authentication required. Returns the status of the proxy, its connection to the Letta agent runtime, and the guardrails engine.",
+                "operationId": "health_v1_health_get",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy or degraded (functional)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HealthResponse"
+                                },
+                                "examples": {
+                                    "healthy": {
+                                        "summary": "Fully healthy",
+                                        "value": {
+                                            "status": "healthy",
+                                            "agent": "connected",
+                                            "guardrails": "active"
+                                        }
+                                    },
+                                    "degraded": {
+                                        "summary": "Agent up, guardrails inactive (optional mode)",
+                                        "value": {
+                                            "status": "degraded",
+                                            "agent": "connected",
+                                            "guardrails": "inactive"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service is unhealthy or not ready",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HealthResponse"
+                                },
+                                "examples": {
+                                    "unhealthy": {
+                                        "summary": "Agent up, required guardrails failed",
+                                        "value": {
+                                            "status": "unhealthy",
+                                            "agent": "connected",
+                                            "guardrails": "inactive"
+                                        }
+                                    },
+                                    "not_ready": {
+                                        "summary": "Agent not yet initialized",
+                                        "value": {
+                                            "status": "not ready",
+                                            "agent": "not initialized",
+                                            "guardrails": "inactive"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/chat": {
+            "post": {
+                "summary": "Chat",
+                "description": "Send a message to the agent and get a complete response.\n\n**Processing flow:**\n1. Validate JWT and extract user context\n2. Validate conversation ownership (if `conversation_id` provided)\n3. Run input guardrails — if blocked, return refusal immediately with `blocked: true`\n4. Inject user identity into Letta agent secrets\n5. Get or create conversation for this user\n6. Send message to Letta agent\n7. Extract assistant response\n8. Run output guardrails — if blocked, return sanitized response with `blocked: true`",
+                "operationId": "chat_v1_chat_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChatRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Agent response (check `blocked` field — if `true`, the message is a guardrail refusal, not an agent answer)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ChatResponse"
+                                },
+                                "examples": {
+                                    "normal": {
+                                        "summary": "Normal response",
+                                        "value": {
+                                            "message": "Let me check your subscription status for gpt-4o...",
+                                            "conversation_id": "conv-550e8400-e29b-41d4-a716-446655440001",
+                                            "blocked": false
+                                        }
+                                    },
+                                    "blocked_input": {
+                                        "summary": "Input blocked by guardrails",
+                                        "value": {
+                                            "message": "I'm sorry, I can't help with that request.",
+                                            "conversation_id": "conv-550e8400-e29b-41d4-a716-446655440001",
+                                            "blocked": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid, or expired JWT",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "examples": {
+                                    "missing": {
+                                        "summary": "No Authorization header",
+                                        "value": {
+                                            "detail": "Missing or invalid Authorization header"
+                                        }
+                                    },
+                                    "expired": {
+                                        "summary": "Expired token",
+                                        "value": {
+                                            "detail": "Token has expired"
+                                        }
+                                    },
+                                    "invalid": {
+                                        "summary": "Invalid signature",
+                                        "value": {
+                                            "detail": "Invalid token"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Conversation does not belong to the authenticated user",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "detail": "Conversation does not belong to this user"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error (missing `message`, exceeded 4000 char limit, invalid `conversation_id` format)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded (per-user, per-minute for chat or per-hour for memory writes)",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds until the rate limit resets",
+                                "schema": {
+                                    "type": "integer"
+                                }
+                            },
+                            "X-RateLimit-Remaining": {
+                                "description": "Remaining requests in the current window (chat RPM limit only)",
+                                "schema": {
+                                    "type": "integer"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "examples": {
+                                    "chat_limit": {
+                                        "summary": "Chat rate limit",
+                                        "value": {
+                                            "detail": "Rate limit exceeded"
+                                        }
+                                    },
+                                    "memory_limit": {
+                                        "summary": "Memory write limit",
+                                        "value": {
+                                            "detail": "Memory write limit exceeded"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Agent/Letta unreachable or failed to process the request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "examples": {
+                                    "context_failed": {
+                                        "summary": "Secret injection failed",
+                                        "value": {
+                                            "detail": "Failed to prepare agent context"
+                                        }
+                                    },
+                                    "conversation_failed": {
+                                        "summary": "Conversation resolution failed",
+                                        "value": {
+                                            "detail": "Failed to resolve conversation"
+                                        }
+                                    },
+                                    "agent_failed": {
+                                        "summary": "Agent processing failed",
+                                        "value": {
+                                            "detail": "Agent failed to process message"
+                                        }
+                                    },
+                                    "parse_failed": {
+                                        "summary": "Response parsing failed",
+                                        "value": {
+                                            "detail": "Agent response could not be processed"
+                                        }
+                                    },
+                                    "ownership_failed": {
+                                        "summary": "Conversation ownership check failed",
+                                        "value": {
+                                            "detail": "Unable to verify conversation ownership"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Guardrails engine not initialized — service is starting up or configuration failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "detail": "Service temporarily unavailable — guardrails not initialized"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/chat/stream": {
+            "post": {
+                "summary": "Chat (Streaming)",
+                "description": "Stream a response from the agent via Server-Sent Events (SSE).\n\n**Important**: This uses POST-based SSE, not the `EventSource` API. The client must use `fetch()` with `ReadableStream` to consume the stream.\n\n**Response content-type depends on outcome:**\n- Normal/output-blocked: `text/event-stream` with SSE events\n- Input-blocked: `application/json` with the same `ChatResponse` body as `/v1/chat` (no stream is opened)\n\nThe client should check the `Content-Type` response header to distinguish these cases.\n\n**SSE event format:**\nEach event is a JSON object on a `data:` line, followed by a blank line:\n```\ndata: {\"chunk\": \"Hello, how can I\", \"index\": 0}\n\ndata: {\"chunk\": \" help you today?\", \"index\": 1}\n\ndata: {\"done\": true, \"conversation_id\": \"conv-uuid\", \"safety_notice\": null}\n\n```\n\n**Event types:**\n- `chunk` — Safe text fragment with sequential `index` for display\n- `retract_chunk` — Output guardrails withheld the chunk at the given index; display `placeholder` text instead\n- `error` — Agent or stream error; `retryable` hints whether the client should retry\n- `done` — Always the final event. Contains `conversation_id` for follow-ups and optional `safety_notice` text\n\n**Processing flow** is the same as `/v1/chat`, except:\n- Agent response is streamed token-by-token\n- Output guardrails evaluate chunks in a sliding window (configurable via `OUTPUT_RAIL_CHUNK_SIZE` / `OUTPUT_RAIL_OVERLAP`)\n- Unsafe chunks are never sent — a `retract_chunk` placeholder is emitted instead\n- A `done` event is always sent as the final event, even after errors",
+                "operationId": "chat_stream_v1_chat_stream_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChatRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "SSE stream of agent response chunks, or a JSON body if input was blocked.\n\nCheck the `Content-Type` header:\n- `text/event-stream` → consume as SSE\n- `application/json` → input was blocked, body is a `ChatResponse`",
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "description": "Newline-delimited SSE events. Each line starts with `data: ` followed by a JSON object matching one of the StreamEvent variants."
+                                },
+                                "examples": {
+                                    "normal_stream": {
+                                        "summary": "Normal streaming response",
+                                        "value": "data: {\"chunk\": \"Hello, how can I\", \"index\": 0}\n\ndata: {\"chunk\": \" help you today?\", \"index\": 1}\n\ndata: {\"done\": true, \"conversation_id\": \"conv-550e8400-e29b-41d4-a716-446655440001\", \"safety_notice\": null}\n\n"
+                                    },
+                                    "retracted_stream": {
+                                        "summary": "Stream with retracted chunk",
+                                        "value": "data: {\"chunk\": \"Here is some info\", \"index\": 0}\n\ndata: {\"retract_chunk\": 1, \"placeholder\": \"...removed...\"}\n\ndata: {\"chunk\": \" and more safe content.\", \"index\": 2}\n\ndata: {\"done\": true, \"conversation_id\": \"conv-550e8400-e29b-41d4-a716-446655440001\", \"safety_notice\": \"Part of this response has been removed for safety reasons.\"}\n\n"
+                                    },
+                                    "error_stream": {
+                                        "summary": "Stream with error",
+                                        "value": "data: {\"error\": \"Stream interrupted\", \"retryable\": true}\n\ndata: {\"done\": true, \"conversation_id\": \"conv-550e8400-e29b-41d4-a716-446655440001\", \"safety_notice\": null}\n\n"
+                                    }
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ChatResponse"
+                                },
+                                "example": {
+                                    "message": "I'm sorry, I can't help with that request.",
+                                    "conversation_id": null,
+                                    "blocked": true
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/paths/~1v1~1chat/post/responses/401"
+                    },
+                    "403": {
+                        "$ref": "#/paths/~1v1~1chat/post/responses/403"
+                    },
+                    "422": {
+                        "$ref": "#/paths/~1v1~1chat/post/responses/422"
+                    },
+                    "429": {
+                        "$ref": "#/paths/~1v1~1chat/post/responses/429"
+                    },
+                    "502": {
+                        "$ref": "#/paths/~1v1~1chat/post/responses/502"
+                    },
+                    "503": {
+                        "description": "Guardrails not initialized, or service is busy (secrets lock timeout)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "examples": {
+                                    "guardrails": {
+                                        "summary": "Guardrails unavailable",
+                                        "value": {
+                                            "detail": "Service temporarily unavailable — guardrails not initialized"
+                                        }
+                                    },
+                                    "busy": {
+                                        "summary": "Lock timeout (concurrent requests)",
+                                        "value": {
+                                            "detail": "Service busy — try again shortly"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "HS256 JWT issued by LiteMaaS. Required claims: `userId` (string UUID), `username` (string), `email` (string), `roles` (string array). The LiteMaaS backend forwards its own JWT as-is — the agent proxy validates it independently using the shared `JWT_SECRET`."
+            }
+        },
+        "schemas": {
+            "ChatRequest": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "maxLength": 4000,
+                        "title": "Message",
+                        "description": "User message text"
+                    },
+                    "conversation_id": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(conv-)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Conversation ID",
+                        "description": "Existing conversation UUID for follow-up messages. Omit to start a new conversation. Must belong to the authenticated user (verified server-side)."
+                    }
+                },
+                "title": "ChatRequest",
+                "description": "Request body for chat endpoints."
+            },
+            "ChatResponse": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "title": "Message",
+                        "description": "Agent's response text, or a guardrail refusal message if `blocked` is `true`"
+                    },
+                    "conversation_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Conversation ID",
+                        "description": "Conversation UUID for follow-up messages. `null` only when input was blocked before conversation resolution."
+                    },
+                    "blocked": {
+                        "type": "boolean",
+                        "default": false,
+                        "title": "Blocked",
+                        "description": "Whether the message or response was blocked by guardrails. When `true`, `message` contains the refusal text, not an agent answer."
+                    }
+                },
+                "title": "ChatResponse",
+                "description": "Response body for the `/v1/chat` endpoint and for `/v1/chat/stream` when input is blocked (returned as JSON instead of SSE)."
+            },
+            "HealthResponse": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["healthy", "degraded", "unhealthy", "not ready"],
+                        "description": "Overall proxy health. `healthy` = agent connected + guardrails active. `degraded` = agent connected but guardrails inactive (only when guardrails are optional). `unhealthy` = agent connected but required guardrails failed. `not ready` = agent not yet initialized."
+                    },
+                    "agent": {
+                        "type": "string",
+                        "enum": ["connected", "not initialized"],
+                        "description": "Connection status to the Letta agent runtime"
+                    },
+                    "guardrails": {
+                        "type": "string",
+                        "enum": ["active", "inactive"],
+                        "description": "Guardrails engine status"
+                    }
+                },
+                "title": "HealthResponse",
+                "description": "Health check response. Returns HTTP 200 for `healthy` and `degraded`, HTTP 503 for `unhealthy` and `not ready`."
+            },
+            "StreamChunkEvent": {
+                "type": "object",
+                "required": ["chunk", "index"],
+                "properties": {
+                    "chunk": {
+                        "type": "string",
+                        "description": "Text fragment of the agent's response"
+                    },
+                    "index": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Sequential chunk index (0-based). Used by the client to build the full response and to correlate `retract_chunk` events."
+                    }
+                },
+                "title": "StreamChunkEvent",
+                "description": "A safe text chunk from the agent's streaming response."
+            },
+            "StreamRetractEvent": {
+                "type": "object",
+                "required": ["retract_chunk", "placeholder"],
+                "properties": {
+                    "retract_chunk": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Index of the chunk that was withheld by output guardrails. The chunk text was never sent to the client."
+                    },
+                    "placeholder": {
+                        "type": "string",
+                        "description": "Placeholder text to display in place of the withheld chunk (always `\"...removed...\"`)"
+                    }
+                },
+                "title": "StreamRetractEvent",
+                "description": "Indicates a chunk was withheld by output guardrails. The unsafe content is never sent — only the placeholder."
+            },
+            "StreamErrorEvent": {
+                "type": "object",
+                "required": ["error", "retryable"],
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Human-readable error description"
+                    },
+                    "retryable": {
+                        "type": "boolean",
+                        "description": "Hint: `true` if the client should retry the request (transient failure), `false` for permanent errors"
+                    }
+                },
+                "title": "StreamErrorEvent",
+                "description": "An error occurred during streaming. A `done` event always follows."
+            },
+            "StreamDoneEvent": {
+                "type": "object",
+                "required": ["done", "conversation_id"],
+                "properties": {
+                    "done": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Always `true`. Signals the end of the stream."
+                    },
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "Conversation UUID for follow-up messages"
+                    },
+                    "safety_notice": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "If any chunks were retracted, contains: \"Part of this response has been removed for safety reasons.\" Otherwise `null`."
+                    }
+                },
+                "title": "StreamDoneEvent",
+                "description": "Final event in every stream. Always sent, even after errors. The client should stop reading after receiving this."
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "required": ["detail"],
+                "properties": {
+                    "detail": {
+                        "type": "string",
+                        "description": "Human-readable error description"
+                    }
+                },
+                "title": "ErrorResponse",
+                "description": "Standard error response body (FastAPI HTTPException format)."
+            },
+            "HTTPValidationError": {
+                "type": "object",
+                "properties": {
+                    "detail": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "title": "Detail"
+                    }
+                },
+                "title": "HTTPValidationError"
+            },
+            "ValidationError": {
+                "type": "object",
+                "required": ["loc", "msg", "type"],
+                "properties": {
+                    "loc": {
+                        "type": "array",
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    },
+                    "input": {
+                        "title": "Input"
+                    },
+                    "ctx": {
+                        "type": "object",
+                        "title": "Context"
+                    }
+                },
+                "title": "ValidationError"
+            }
+        }
+    }
+}

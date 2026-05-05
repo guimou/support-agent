@@ -23,6 +23,7 @@ def get_global_usage_stats() -> str:
         Global usage summary including total spend, active users, and top models.
     """
     import os
+    from datetime import datetime, timedelta, timezone
 
     import httpx
 
@@ -38,13 +39,16 @@ def get_global_usage_stats() -> str:
     if not token:
         raise RuntimeError("LITEMAAS_ADMIN_API_KEY not set")
 
+    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    start_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+
     # NOTE: This is a POST endpoint — an exception to the read-only rule.
     # The POST is required because the admin analytics endpoint accepts
     # complex filter arrays in the request body. No data is mutated.
     response = httpx.post(
         f"{base_url}/api/v1/admin/usage/analytics",
         headers={"Authorization": f"Bearer {token}"},
-        json={},  # No filters — get global stats
+        json={"startDate": start_date, "endDate": end_date},
         timeout=15.0,
     )
     try:

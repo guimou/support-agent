@@ -86,7 +86,7 @@ The `Containerfile` uses two stages:
 
 ## Kubernetes / OpenShift (Helm)
 
-> **Status**: Helm chart planned for Phase 3D. The design below documents the target architecture.
+> **Status**: Helm chart implemented (Phase 3D). See `deployment/helm/litemaas-agent/` for the full chart.
 
 ### Helm Chart Structure
 

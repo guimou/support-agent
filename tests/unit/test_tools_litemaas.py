@@ -337,37 +337,23 @@ class TestGetUsageStats:
 
     @patch("httpx.get")
     def test_formats_usage_stats(self, mock_get):
-        def side_effect(url, **kwargs):
-            if "budget" in url:
-                return MagicMock(
-                    status_code=200,
-                    json=lambda: {
-                        "maxBudget": 100.0,
-                        "currentSpend": 45.0,
-                        "budgetDuration": "monthly",
-                        "budgetResetAt": "2026-05-01",
-                    },
-                    raise_for_status=lambda: None,
-                )
-            else:  # summary endpoint
-                return MagicMock(
-                    status_code=200,
-                    json=lambda: {
-                        "totals": {
-                            "requests": 5000,
-                            "tokens": 100000,
-                            "cost": 25.5,
-                            "successRate": 95,
-                        },
-                        "byModel": [
-                            {"modelName": "gpt-4", "requests": 3000, "cost": 20.0},
-                            {"modelName": "claude-3", "requests": 2000, "cost": 5.5},
-                        ],
-                    },
-                    raise_for_status=lambda: None,
-                )
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "totals": {
+                    "requests": 5000,
+                    "tokens": 100000,
+                    "cost": 25.5,
+                    "successRate": 95,
+                },
+                "byModel": [
+                    {"modelName": "gpt-4", "requests": 3000, "cost": 20.0},
+                    {"modelName": "claude-3", "requests": 2000, "cost": 5.5},
+                ],
+            },
+            raise_for_status=lambda: None,
+        )
 
-        mock_get.side_effect = side_effect
         with patch.dict(
             "os.environ",
             {
@@ -377,8 +363,6 @@ class TestGetUsageStats:
             },
         ):
             result = get_usage_stats()
-        assert "$45.00 / $100.00" in result
-        assert "monthly" in result
         assert "5,000" in result
         assert "100,000" in result
         assert "$25.50" in result

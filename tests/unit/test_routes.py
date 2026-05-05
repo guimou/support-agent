@@ -8,7 +8,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from proxy.auth import _JwtConfig
-from proxy.routes import _count_memory_write, _extract_assistant_message, init_rate_limiters, router
+from proxy.routes import (
+    _audit_memory_write_pii,
+    _count_memory_write,
+    _extract_assistant_message,
+    init_rate_limiters,
+    router,
+)
 
 JWT_SECRET = "test-secret-for-routes-minimum-32chars"
 _TEST_JWT_CONFIG = _JwtConfig(secret=JWT_SECRET, issuer="", audience="")
@@ -1269,3 +1275,60 @@ class TestCountMemoryWrite:
         after = limiter.remaining("mem-user-3")
         assert result == "Done"
         assert after == before - 1
+
+
+class TestMemoryWritePiiAudit:
+    def _make_user(self) -> object:
+        from proxy.auth import AuthenticatedUser
+
+        return AuthenticatedUser(
+            user_id="audit-user",
+            username="u",
+            email="e",
+            roles=("user",),
+            is_admin=False,
+        )
+
+    def _make_tool_msg(self, tool_name: str, arguments: object) -> object:
+        tool_call = Mock()
+        tool_call.name = tool_name
+        tool_call.arguments = arguments
+        msg = Mock()
+        msg.tool_call = tool_call
+        return msg
+
+    def test_logs_warning_when_email_in_arguments(self, caplog):
+        import logging
+
+        user = self._make_user()
+        msg = self._make_tool_msg(
+            "core_memory_append",
+            json.dumps({"content": "User email is alice@example.com"}),
+        )
+        with caplog.at_level(logging.WARNING, logger="proxy.routes"):
+            _audit_memory_write_pii(msg, user)
+        assert any("SECURITY" in r.message for r in caplog.records)
+
+    def test_no_warning_for_clean_content(self, caplog):
+        import logging
+
+        user = self._make_user()
+        msg = self._make_tool_msg(
+            "core_memory_append",
+            json.dumps({"content": "User prefers concise answers"}),
+        )
+        with caplog.at_level(logging.WARNING, logger="proxy.routes"):
+            _audit_memory_write_pii(msg, user)
+        assert not any("SECURITY" in r.message for r in caplog.records)
+
+    def test_ignores_non_memory_write_tools(self, caplog):
+        import logging
+
+        user = self._make_user()
+        msg = self._make_tool_msg(
+            "get_model_info",
+            json.dumps({"content": "alice@example.com"}),
+        )
+        with caplog.at_level(logging.WARNING, logger="proxy.routes"):
+            _audit_memory_write_pii(msg, user)
+        assert not any("SECURITY" in r.message for r in caplog.records)

@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Status**: Phase 1 (Foundation) complete
+> **Status**: Phase 3 (Safety & Privacy Hardening) complete
 > **Scope**: Standalone AI assistant agent for LiteMaaS (reusable for similar platforms)
 
 ## Executive Summary
