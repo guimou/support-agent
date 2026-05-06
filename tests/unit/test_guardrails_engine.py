@@ -280,7 +280,8 @@ class TestGuardrailsEngineCheckInput:
         ):
             result = await engine.check_input("What's the weather?", mock_user)
         assert result.blocked is True
-        assert "litemaas platform assistant" in result.response.lower()
+        assert "asks about weather" in result.response
+        assert "model subscriptions" in result.response
 
     async def test_uncertain_annotates_message(self, engine, mock_user):
         engine._rails.generate_async.return_value = "I can help you"

@@ -323,7 +323,13 @@ class GuardrailsEngine:
 
         if topic_result.status == "off_topic":
             logger.info("Topic classifier blocked input: %s", topic_result.reason)
-            return RailResult(blocked=True, response=_INPUT_REFUSAL)
+            reason = topic_result.reason or "unrelated to the platform"
+            response = (
+                f"That doesn't seem to be related to the LiteMaaS platform ({reason}). "
+                "I can help you with model subscriptions, API keys, usage "
+                "questions, and platform troubleshooting. How can I help?"
+            )
+            return RailResult(blocked=True, response=response)
 
         if topic_result.status == "uncertain":
             logger.info("Topic classifier uncertain: %s", topic_result.reason)

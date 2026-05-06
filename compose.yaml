@@ -31,7 +31,7 @@ services:
       - LITELLM_USER_API_KEY=${LITELLM_USER_API_KEY}
       - LITEMAAS_ADMIN_API_KEY=${LITEMAAS_ADMIN_API_KEY}
       - PROXY_PORT=8400
-      - LOG_LEVEL=debug
+      - LOG_LEVEL=info
       - RATE_LIMIT_RPM=30
       - RATE_LIMIT_MEMORY_WRITES_PER_HOUR=20
     depends_on:
