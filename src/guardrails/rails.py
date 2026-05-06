@@ -3,8 +3,8 @@
 Provides input/output rail evaluation via the NeMo Guardrails library.
 The guardrails model is configured via config.yml and uses OpenAI-compatible provider.
 
-Input pipeline: Llama Guard (safety, via NeMo) + agent-model topic classifier
-run in parallel. Output pipeline: regex PII + Llama Guard (safety, via NeMo).
+Input pipeline: Nemotron Content Safety (via NeMo) + agent-model topic classifier
+run in parallel. Output pipeline: regex PII + Nemotron Content Safety (via NeMo).
 
 RailResult, TopicResult, and _extract_nemo_content are importable without NeMo;
 GuardrailsEngine requires NeMo at runtime.
@@ -215,7 +215,7 @@ class GuardrailsEngine:
         logger.info("NeMo Guardrails loaded from %s", GUARDRAILS_CONFIG_DIR)
 
     async def _check_input_safety(self, message: str, user: AuthenticatedUser) -> RailResult:
-        """Run Llama Guard input safety check via NeMo (fails closed)."""
+        """Run content safety check via NeMo (fails closed)."""
         try:
             response = await self._rails.generate_async(
                 messages=[
@@ -290,7 +290,7 @@ class GuardrailsEngine:
         return TopicResult(status="on_topic")
 
     async def check_input(self, message: str, user: AuthenticatedUser) -> RailResult:
-        """Run input guardrails: Llama Guard safety + topic classification in parallel."""
+        """Run input guardrails: content safety + topic classification in parallel."""
         from guardrails.actions import _regex_check_input_cross_user_impl
 
         if not user.is_admin:

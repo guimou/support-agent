@@ -13,7 +13,7 @@ models:
           chat_template_kwargs:
             enable_thinking: false
 
-  - type: llama_guard
+  - type: content_safety
     engine: openai
     model: ${GUARDRAILS_MODEL}
     parameters:
@@ -27,14 +27,14 @@ models:
 rails:
   input:
     flows:
-      - llama guard check input
+      - content safety check input $model=content_safety
       - cross user access from intent
       - check cross user access
 
   output:
     flows:
       - check output safety
-      - llama guard check output
+      - content safety check output $model=content_safety
 
 instructions:
   - type: general

@@ -1,120 +1,67 @@
-# Llama Guard safety taxonomy prompts
-# Task names must match NeMo's Llama Guard integration:
-#   llama_guard_check_input  — used by "llama guard check input" flow
-#   llama_guard_check_output — used by "llama guard check output" flow
+# Nemotron Content Safety prompt templates
+# Task names must match NeMo's content_safety action key format:
+#   content_safety_check_input $model=content_safety
+#   content_safety_check_output $model=content_safety
 #
-# Uses Meta's standard safety categories (Llama Guard 3 training taxonomy).
-# Off-topic and jailbreak detection are handled by regex-based flows
-# (check jailbreak, check off topic) since Llama Guard cannot classify those.
+# Uses a curated subset of NVIDIA's 23-category safety taxonomy,
+# filtered to categories relevant for a platform support assistant.
+# Off-topic and jailbreak detection are handled separately by the
+# topic classifier (rails.py) and regex flows.
 
 prompts:
-  - task: llama_guard_check_input
+  - task: content_safety_check_input $model=content_safety
     content: |
-      Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy with the below categories.
+      Task: Check if there is unsafe content in the user or agent messages in the below conversation in accordance with our safety policy with the below categories.
+      Provide a 'safe' or 'unsafe' rating for both the user message and the agent response.
+      If there is unsafe content, please also provide a list of violated categories according to our safety policy below.
+
       <BEGIN UNSAFE CONTENT CATEGORIES>
-      S1: Violent Crimes.
-      Should not
-      - Help people plan or engage in violent crimes.
-      S2: Non-Violent Crimes.
-      Should not
-      - Help people plan or engage in non-violent crimes like fraud, theft, or hacking.
-      S3: Sex-Related Crimes.
-      Should not
-      - Help people plan or engage in sex-related crimes.
-      S4: Child Sexual Exploitation.
-      Should not
-      - Engage in any content involving child sexual exploitation.
-      S5: Defamation.
-      Should not
-      - Help people create defamatory content.
-      S6: Specialized Advice.
-      Should not
-      - Provide specialized legal, medical, or financial advice without disclaimers.
-      S7: Privacy.
-      Should not
-      - Help people violate the privacy of others.
-      S8: Intellectual Property.
-      Should not
-      - Help people violate intellectual property rights.
-      S9: Indiscriminate Weapons.
-      Should not
-      - Help people build indiscriminate weapons.
-      S10: Hate.
-      Should not
-      - Express hateful sentiments against people based on protected characteristics.
-      S11: Suicide and Self-Harm.
-      Should not
-      - Encourage or assist with suicide or self-harm.
-      S12: Sexual Content.
-      Should not
-      - Engage in sexually explicit conversations.
-      S13: Elections.
-      Should not
-      - Provide false information about elections or voting.
+      S1: Violence.
+      S3: Criminal Planning/Confessions.
+      S4: Guns and Illegal Weapons.
+      S6: Suicide and Self Harm.
+      S7: Sexual (minor).
+      S8: Hate/Identity Hate.
+      S9: PII/Privacy.
+      S15: Manipulation.
+      S16: Fraud/Deception.
+      S17: Malware.
       <END UNSAFE CONTENT CATEGORIES>
 
       <BEGIN CONVERSATION>
-      User: {{ user_input }}
+      user: {{ user_input }}
       <END CONVERSATION>
 
-      Provide your safety assessment for ONLY THE LAST User message in the above conversation:
-      - First line must read 'safe' or 'unsafe'.
-      - If unsafe, a second line must include a comma-separated list of violated categories.
+      Provide your safety assessment for the above conversation in the below output JSON format:
+      {"User Safety": safe or unsafe rating for the user message, "Response Safety": safe or unsafe rating for the agent response. Omit if no agent response present. "Safety Categories": a comma-separated list of applicable safety categories from the provided taxonomy. Omit if all safe.}
+      Do not include anything other than the output JSON in your response.
+      Output JSON:
+    output_parser: nemoguard_parse_prompt_safety
+    max_tokens: 100
 
-  - task: llama_guard_check_output
+  - task: content_safety_check_output $model=content_safety
     content: |
-      Task: Check if there is unsafe content in 'Agent' messages in conversations according our safety policy with the below categories.
+      Task: Check if there is unsafe content in the user or agent messages in the below conversation in accordance with our safety policy with the below categories.
+      Provide a 'safe' or 'unsafe' rating for both the user message and the agent response.
+      If there is unsafe content, please also provide a list of violated categories according to our safety policy below.
+
       <BEGIN UNSAFE CONTENT CATEGORIES>
-      S1: Violent Crimes.
-      Should not
-      - Help people plan or engage in violent crimes.
-      S2: Non-Violent Crimes.
-      Should not
-      - Help people plan or engage in non-violent crimes.
-      S3: Sex-Related Crimes.
-      Should not
-      - Help people plan or engage in sex-related crimes.
-      S4: Child Sexual Exploitation.
-      Should not
-      - Engage in any content involving child sexual exploitation.
-      S5: Defamation.
-      Should not
-      - Create defamatory content about individuals.
-      S6: Specialized Advice.
-      Should not
-      - Provide specialized legal, medical, or financial advice without disclaimers.
-      S7: Privacy.
-      Should not
-      - Reveal personal information or violate privacy of users.
-      - Expose full API keys, email addresses, or user-identifying data.
-      S8: Intellectual Property.
-      Should not
-      - Reproduce copyrighted content verbatim (e.g., books, articles, source code).
-      - Provide instructions for pirating or circumventing content protection.
-      Note: Listing available platform models or services by their public names is allowed.
-      S9: Indiscriminate Weapons.
-      Should not
-      - Provide instructions for building weapons.
-      S10: Hate.
-      Should not
-      - Express hateful sentiments against people.
-      S11: Suicide and Self-Harm.
-      Should not
-      - Encourage or assist with suicide or self-harm.
-      S12: Sexual Content.
-      Should not
-      - Include sexually explicit content.
-      S13: Elections.
-      Should not
-      - Provide false information about elections.
+      S1: Violence.
+      S7: Sexual (minor).
+      S8: Hate/Identity Hate.
+      S9: PII/Privacy.
+      S16: Fraud/Deception.
+      S17: Malware.
       <END UNSAFE CONTENT CATEGORIES>
 
       <BEGIN CONVERSATION>
-      User: {{ user_input }}
-
-      Agent: {{ bot_response }}
+      user: {{ user_input }}
+      agent: {{ bot_response }}
       <END CONVERSATION>
 
-      Provide your safety assessment for ONLY THE LAST Agent message in the above conversation:
-      - First line must read 'safe' or 'unsafe'.
-      - If unsafe, a second line must include a comma-separated list of violated categories.
+      Provide your safety assessment for the above conversation in the below output JSON format:
+      {"User Safety": safe or unsafe rating for the user message, "Response Safety": safe or unsafe rating for the agent response. Omit if no agent response present. "Safety Categories": a comma-separated list of applicable safety categories from the provided taxonomy. Omit if all safe.}
+      Do not include anything other than the output JSON in your response.
+      Output JSON:
+    output_parser: nemoguard_parse_response_safety
+    max_tokens: 100
