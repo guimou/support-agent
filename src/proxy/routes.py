@@ -15,7 +15,7 @@ from starlette.responses import StreamingResponse
 
 from proxy.auth import AuthenticatedUser, validate_jwt
 from proxy.rate_limit import SlidingWindowRateLimiter
-from proxy.streaming import TokenBuffer
+from proxy.streaming import TokenBuffer, async_iter_sync
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -560,7 +560,7 @@ async def _stream_response(
             return
 
         try:
-            for msg in letta_stream:
+            async for msg in async_iter_sync(letta_stream):
                 if asyncio.get_event_loop().time() > stream_deadline:
                     logger.error(
                         "Stream duration exceeded %.0fs for user %s",

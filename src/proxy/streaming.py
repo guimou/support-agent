@@ -2,10 +2,38 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterable
 
 logger = logging.getLogger(__name__)
+
+_EXHAUSTED = object()
+
+
+async def async_iter_sync[T](iterable: Iterable[T]) -> AsyncIterator[T]:
+    """Wrap a synchronous iterable so each ``next()`` runs in a thread.
+
+    Prevents blocking the asyncio event loop when consuming iterators
+    backed by synchronous I/O (e.g. the Letta SDK streaming response).
+    """
+    iterator = iter(iterable)
+
+    def _next() -> T | object:
+        try:
+            return next(iterator)
+        except StopIteration:
+            return _EXHAUSTED
+
+    while True:
+        item = await asyncio.to_thread(_next)
+        if item is _EXHAUSTED:
+            break
+        yield item  # type: ignore[misc]
 
 _CHARS_PER_TOKEN = 4
 

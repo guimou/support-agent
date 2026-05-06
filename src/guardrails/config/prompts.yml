@@ -89,7 +89,9 @@ prompts:
       - Expose full API keys, email addresses, or user-identifying data.
       S8: Intellectual Property.
       Should not
-      - Violate intellectual property rights.
+      - Reproduce copyrighted content verbatim (e.g., books, articles, source code).
+      - Provide instructions for pirating or circumventing content protection.
+      Note: Listing available platform models or services by their public names is allowed.
       S9: Indiscriminate Weapons.
       Should not
       - Provide instructions for building weapons.

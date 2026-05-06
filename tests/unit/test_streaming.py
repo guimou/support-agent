@@ -1,6 +1,11 @@
-"""Unit tests for TokenBuffer."""
+"""Unit tests for TokenBuffer and async_iter_sync."""
 
-from proxy.streaming import _CHARS_PER_TOKEN, ChunkWithContext, TokenBuffer
+import asyncio
+import time
+
+import pytest
+
+from proxy.streaming import _CHARS_PER_TOKEN, ChunkWithContext, TokenBuffer, async_iter_sync
 
 
 class TestTokenBuffer:
@@ -98,3 +103,44 @@ class TestTokenBuffer:
         assert result is not None
         assert result.text == "remaining"
         assert result.overlap_context == "A" * 20
+
+
+class TestAsyncIterSync:
+    @pytest.mark.asyncio
+    async def test_yields_all_items(self):
+        items = [1, 2, 3, 4, 5]
+        result = [item async for item in async_iter_sync(items)]
+        assert result == items
+
+    @pytest.mark.asyncio
+    async def test_empty_iterable(self):
+        result = [item async for item in async_iter_sync([])]
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_single_item(self):
+        result = [item async for item in async_iter_sync([42])]
+        assert result == [42]
+
+    @pytest.mark.asyncio
+    async def test_does_not_block_event_loop(self):
+        """A slow sync iterator should not prevent other async tasks from running."""
+
+        def slow_iter():
+            for i in range(3):
+                time.sleep(0.05)
+                yield i
+
+        flag = asyncio.Event()
+
+        async def set_flag():
+            flag.set()
+
+        items = []
+        async for item in async_iter_sync(slow_iter()):
+            items.append(item)
+            if item == 0:
+                asyncio.get_event_loop().call_soon(lambda: asyncio.ensure_future(set_flag()))
+
+        assert items == [0, 1, 2]
+        assert flag.is_set()
