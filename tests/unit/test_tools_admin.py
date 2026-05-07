@@ -153,15 +153,14 @@ class TestGetGlobalUsageStats:
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {
-                "totals": {
-                    "requests": 100000,
-                    "tokens": 5000000,
-                    "cost": 250.0,
-                    "successRate": 98,
-                },
-                "modelBreakdown": [
-                    {"modelName": "gpt-4", "requests": 50000, "cost": 150.0, "uniqueUsers": 25},
-                    {"modelName": "claude-3", "requests": 30000, "cost": 75.0, "uniqueUsers": 20},
+                "totalRequests": 100000,
+                "activeUsers": 15,
+                "totalTokens": {"total": 5000000, "prompt": 2000000, "completion": 3000000},
+                "totalCost": {"total": 250.0, "byProvider": {}, "byModel": {}},
+                "successRate": 98,
+                "topModels": [
+                    {"modelName": "gpt-4", "requests": 50000, "cost": 150.0},
+                    {"modelName": "claude-3", "requests": 30000, "cost": 75.0},
                 ],
             },
         )
@@ -180,14 +179,14 @@ class TestGetGlobalUsageStats:
         assert "5,000,000" in result
         assert "$250.00" in result
         assert "gpt-4: 50,000 requests" in result
-        assert "25 users" in result
+        assert "Active users: 15" in result
 
     @patch("httpx.post")
     def test_sends_empty_filters(self, mock_post):
         """The tool should send an empty filter object for global stats."""
         mock_post.return_value = MagicMock(
             status_code=200,
-            json=lambda: {"totals": {}, "modelBreakdown": []},
+            json=lambda: {"totalRequests": 0, "totalTokens": {}, "totalCost": {}, "topModels": []},
         )
         mock_post.return_value.raise_for_status = lambda: None
         with patch.dict(

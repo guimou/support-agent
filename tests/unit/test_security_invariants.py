@@ -47,7 +47,8 @@ class TestInvariant1ReadOnly:
         source = inspect.getsource(func)  # type: ignore[arg-type]
         for method in ["httpx.put", "httpx.patch", "httpx.delete"]:
             assert method not in source, f"{func.__name__} uses {method}"  # type: ignore[union-attr]
-        if func.__name__ != "get_global_usage_stats":  # type: ignore[union-attr]
+        post_exempt = {"get_global_usage_stats", "get_usage_stats"}
+        if func.__name__ not in post_exempt:  # type: ignore[union-attr]
             assert "httpx.post" not in source, f"{func.__name__} uses httpx.post"  # type: ignore[union-attr]
 
     @pytest.mark.parametrize("func", MEMORY_TOOLS, ids=lambda f: f.__name__)

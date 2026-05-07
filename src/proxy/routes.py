@@ -623,7 +623,7 @@ async def _stream_response(
                         )
                     else:
                         continue
-                    if not content or not content.strip():
+                    if not content:
                         continue
 
                     chunk_with_ctx = buffer.add(content)

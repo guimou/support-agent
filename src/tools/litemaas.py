@@ -170,8 +170,11 @@ def get_user_api_keys() -> str:
     return "\n".join(lines)
 
 
-def get_usage_stats() -> str:
-    """Get the current user's usage statistics for the last 30 days.
+def get_usage_stats(days: int = 30) -> str:
+    """Get the current user's usage statistics for a given number of past days.
+
+    Args:
+        days: Number of past days to retrieve usage for (default 30, max 90).
 
     Returns:
         Usage summary including request counts, tokens, cost, and per-model breakdown.
@@ -191,12 +194,13 @@ def get_usage_stats() -> str:
     if not token:
         raise RuntimeError("LITEMAAS_USER_TOKEN not set")
 
+    days = max(1, min(days, 90))
     end_date = datetime.now(UTC).strftime("%Y-%m-%d")
-    start_date = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
+    start_date = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
 
-    response = httpx.get(
-        f"{base_url}/api/v1/usage/summary",
-        params={"startDate": start_date, "endDate": end_date},
+    response = httpx.post(
+        f"{base_url}/api/v1/usage/analytics",
+        json={"startDate": start_date, "endDate": end_date},
         headers={"Authorization": f"Bearer {token}"},
         timeout=10.0,
     )
@@ -204,23 +208,22 @@ def get_usage_stats() -> str:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(
-            f"Usage summary endpoint returned HTTP {exc.response.status_code}"
+            f"Usage analytics endpoint returned HTTP {exc.response.status_code}"
         ) from None
     usage = response.json()
 
-    totals = usage.get("totals", {})
     lines = [
-        "Last 30 days usage:",
-        f"  Requests: {totals.get('requests', 0):,}",
-        f"  Tokens: {totals.get('tokens', 0):,}",
-        f"  Cost: ${totals.get('cost', 0):.2f}",
-        f"  Success rate: {totals.get('successRate', 0)}%",
+        f"Last {days} days usage:",
+        f"  Requests: {usage.get('totalRequests', 0):,}",
+        f"  Tokens: {usage.get('totalTokens', {}).get('total', 0):,}",
+        f"  Cost: ${usage.get('totalCost', {}).get('total', 0):.2f}",
+        f"  Success rate: {usage.get('successRate', 0):.1f}%",
     ]
 
-    by_model = usage.get("byModel", [])
-    if by_model:
+    top_models = usage.get("topModels", [])
+    if top_models:
         lines.append("\nPer-model breakdown:")
-        for m in by_model[:10]:
+        for m in top_models[:10]:
             lines.append(
                 f"  - {m.get('modelName', 'unknown')}: "
                 f"{m.get('requests', 0):,} requests, ${m.get('cost', 0):.2f}"

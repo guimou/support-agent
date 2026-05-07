@@ -16,8 +16,11 @@ from an admin user (see proxy/routes.py chat() — empty string for non-admin).
 """
 
 
-def get_global_usage_stats() -> str:
+def get_global_usage_stats(days: int = 30) -> str:
     """Get system-wide usage statistics (admin only).
+
+    Args:
+        days: Number of past days to retrieve usage for (default 30, max 90).
 
     Returns:
         Global usage summary including total spend, active users, and top models.
@@ -39,8 +42,9 @@ def get_global_usage_stats() -> str:
     if not token:
         raise RuntimeError("LITEMAAS_ADMIN_API_KEY not set")
 
+    days = max(1, min(days, 90))
     end_date = datetime.now(UTC).strftime("%Y-%m-%d")
-    start_date = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
+    start_date = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     # NOTE: This is a POST endpoint — an exception to the read-only rule.
     # The POST is required because the admin analytics endpoint accepts
@@ -59,24 +63,23 @@ def get_global_usage_stats() -> str:
         ) from None
     data = response.json()
 
-    totals = data.get("totals", {})
     lines = [
         "Global Usage Statistics:",
-        f"  Total requests: {totals.get('requests', 0):,}",
-        f"  Total tokens: {totals.get('tokens', 0):,}",
-        f"  Total cost: ${totals.get('cost', 0):.2f}",
-        f"  Success rate: {totals.get('successRate', 0)}%",
+        f"  Total requests: {data.get('totalRequests', 0):,}",
+        f"  Active users: {data.get('activeUsers', 0):,}",
+        f"  Total tokens: {data.get('totalTokens', {}).get('total', 0):,}",
+        f"  Total cost: ${data.get('totalCost', {}).get('total', 0):.2f}",
+        f"  Success rate: {data.get('successRate', 0):.1f}%",
     ]
 
-    models = data.get("modelBreakdown", [])
+    models = data.get("topModels", [])
     if models:
         lines.append("\nTop models:")
         for m in models[:5]:
             lines.append(
                 f"  - {m.get('modelName', 'unknown')}: "
                 f"{m.get('requests', 0):,} requests, "
-                f"${m.get('cost', 0):.2f}, "
-                f"{m.get('uniqueUsers', 0)} users"
+                f"${m.get('cost', 0):.2f}"
             )
 
     return "\n".join(lines)
