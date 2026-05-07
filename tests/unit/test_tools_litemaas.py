@@ -33,11 +33,11 @@ class TestToolSecurityInvariants:
         assert 'os.getenv("LETTA_USER_ID")' in source
 
     @pytest.mark.parametrize("func", [check_subscription, get_user_api_keys, get_usage_stats])
-    def test_uses_scoped_token(self, func):
-        """Standard tools must use LITELLM_USER_API_KEY, not LITELLM_API_KEY."""
+    def test_uses_user_token(self, func):
+        """User-scoped LiteMaaS tools must always use the user's JWT (LITEMAAS_USER_TOKEN)."""
         source = inspect.getsource(func)
-        assert 'os.getenv("LITELLM_USER_API_KEY")' in source
-        assert 'os.getenv("LITELLM_API_KEY")' not in source
+        assert 'os.getenv("LITEMAAS_USER_TOKEN")' in source
+        assert "LITEMAAS_ADMIN_API_KEY" not in source
 
 
 class TestListModels:
@@ -135,7 +135,7 @@ class TestCheckSubscription:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
                 "LETTA_USER_ID": "user-123",
             },
         ):
@@ -147,7 +147,7 @@ class TestCheckSubscription:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
             },
             clear=True,
         ):
@@ -183,7 +183,7 @@ class TestCheckSubscription:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
                 "LETTA_USER_ID": "user-123",
             },
         ):
@@ -202,7 +202,7 @@ class TestGetUserApiKeys:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
             },
             clear=True,
         ):
@@ -223,7 +223,7 @@ class TestGetUserApiKeys:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
                 "LETTA_USER_ID": "user-123",
             },
         ):
@@ -244,7 +244,7 @@ class TestGetUserApiKeys:
                 "os.environ",
                 {
                     "LITEMAAS_API_URL": "http://test",
-                    "LITELLM_USER_API_KEY": "test-key",
+                    "LITEMAAS_USER_TOKEN": "test-token",
                     "LETTA_USER_ID": "user-123",
                 },
             ),
@@ -275,7 +275,7 @@ class TestGetUserApiKeys:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
                 "LETTA_USER_ID": "user-123",
             },
         ):
@@ -306,7 +306,7 @@ class TestGetUserApiKeys:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
                 "LETTA_USER_ID": "user-123",
             },
         ):
@@ -325,7 +325,7 @@ class TestGetUsageStats:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
             },
             clear=True,
         ):
@@ -358,7 +358,7 @@ class TestGetUsageStats:
             "os.environ",
             {
                 "LITEMAAS_API_URL": "http://test",
-                "LITELLM_USER_API_KEY": "test-key",
+                "LITEMAAS_USER_TOKEN": "test-token",
                 "LETTA_USER_ID": "user-123",
             },
         ):

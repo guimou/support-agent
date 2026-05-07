@@ -26,6 +26,7 @@ class AuthenticatedUser:
     email: str
     roles: tuple[str, ...]
     is_admin: bool
+    raw_token: str
 
 
 _MIN_JWT_SECRET_LENGTH = 16
@@ -122,4 +123,5 @@ def validate_jwt(request: Request) -> AuthenticatedUser:
         email=email,
         roles=tuple(roles),
         is_admin="admin" in roles,
+        raw_token=token,
     )

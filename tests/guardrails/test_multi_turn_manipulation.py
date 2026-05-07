@@ -17,7 +17,7 @@ from proxy.auth import AuthenticatedUser
 if TYPE_CHECKING:
     from guardrails.rails import GuardrailsEngine
 
-_STANDARD_USER = AuthenticatedUser("uid-1", "alice", "alice@test.com", ("user",), False)
+_STANDARD_USER = AuthenticatedUser("uid-1", "alice", "alice@test.com", ("user",), False, "test-token")
 
 
 class TestMultiTurnManipulation:

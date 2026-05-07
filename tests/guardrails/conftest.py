@@ -15,7 +15,7 @@ def _check_guardrails_available() -> None:
     try:
         settings = Settings()  # type: ignore[call-arg]
         engine = GuardrailsEngine(settings)
-        user = AuthenticatedUser("test", "test-user", "test@test.com", ("user",), False)
+        user = AuthenticatedUser("test", "test-user", "test@test.com", ("user",), False, "test-token")
         asyncio.run(engine.check_input("hello", user))
     except Exception as e:
         pytest.skip(f"Guardrails not available: {e}")

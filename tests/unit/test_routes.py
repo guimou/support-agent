@@ -1205,6 +1205,7 @@ class TestCountMemoryWrite:
             email="e",
             roles=("user",),
             is_admin=False,
+            raw_token="test-token",
         )
 
         tool_call = Mock()
@@ -1230,6 +1231,7 @@ class TestCountMemoryWrite:
             email="e",
             roles=("user",),
             is_admin=False,
+            raw_token="test-token",
         )
 
         tool_call = Mock()
@@ -1257,6 +1259,7 @@ class TestCountMemoryWrite:
             email="e",
             roles=("user",),
             is_admin=False,
+            raw_token="test-token",
         )
 
         tool_msg = Mock()
@@ -1287,6 +1290,7 @@ class TestMemoryWritePiiAudit:
             email="e",
             roles=("user",),
             is_admin=False,
+            raw_token="test-token",
         )
 
     def _make_tool_msg(self, tool_name: str, arguments: object) -> object:

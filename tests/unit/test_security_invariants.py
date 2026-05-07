@@ -4,7 +4,7 @@ These tests verify the non-negotiable security invariants:
 1. Tools are read-only (GET only, one documented POST exception)
 2. user_id from JWT, never from LLM (no user_id function parameter)
 3. Admin tools role-gated (check LETTA_USER_ROLE)
-4. Scoped tokens (standard=LITELLM_USER_API_KEY, admin=LITEMAAS_ADMIN_API_KEY)
+4. Scoped tokens (LiteLLM tools=LITELLM_USER_API_KEY, LiteMaaS user tools=LITEMAAS_USER_TOKEN, admin tools=LITEMAAS_ADMIN_API_KEY)
 5. Memory writes PII-audited (pre-commit enforcement via custom wrappers)
 6. Guardrails fail closed (errors -> refuse)
 """
@@ -96,12 +96,22 @@ class TestInvariant4ScopedTokens:
 
     @pytest.mark.parametrize(
         "func",
-        [check_subscription, get_user_api_keys, get_usage_stats, check_rate_limits],
+        [check_rate_limits, check_model_health, get_model_info],
         ids=lambda f: f.__name__,
     )
-    def test_standard_tool_uses_scoped_key(self, func: object) -> None:
+    def test_litellm_tool_uses_scoped_key(self, func: object) -> None:
         source = inspect.getsource(func)  # type: ignore[arg-type]
         assert "LITELLM_USER_API_KEY" in source
+
+    @pytest.mark.parametrize(
+        "func",
+        [check_subscription, get_user_api_keys, get_usage_stats],
+        ids=lambda f: f.__name__,
+    )
+    def test_litemaas_tool_uses_user_token(self, func: object) -> None:
+        source = inspect.getsource(func)  # type: ignore[arg-type]
+        assert "LITEMAAS_USER_TOKEN" in source
+        assert "LITEMAAS_ADMIN_API_KEY" not in source
 
     @pytest.mark.parametrize("func", ADMIN_TOOLS, ids=lambda f: f.__name__)
     def test_admin_tool_uses_admin_key(self, func: object) -> None:

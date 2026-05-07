@@ -196,6 +196,7 @@ async def chat(
                     "LITEMAAS_ADMIN_API_KEY": (
                         agent_state.settings.litemaas_admin_api_key if user.is_admin else ""
                     ),
+                    "LITEMAAS_USER_TOKEN": user.raw_token,
                 },
             )
         except Exception:
@@ -232,6 +233,15 @@ async def chat(
         raise HTTPException(
             status_code=502, detail="Agent response could not be processed"
         ) from None
+
+    # 5b. Empty agent response — return a friendly fallback, not a safety error
+    if not assistant_message.strip():
+        logger.warning("Empty agent response for user %s — returning fallback", user.user_id)
+        return ChatResponse(
+            message=_EMPTY_RESPONSE_FALLBACK,
+            conversation_id=conversation_id,
+            blocked=False,
+        )
 
     # 6. Output guardrails
     output_result = await guardrails.check_output(assistant_message, user)
@@ -386,6 +396,11 @@ def _count_memory_write(msg: Any, user: AuthenticatedUser) -> None:
             )
 
 
+_EMPTY_RESPONSE_FALLBACK = (
+    "I'm sorry, I seem to be having difficulties providing a response at the moment. "
+    "Please try again or contact support if the issue persists."
+)
+
 _KNOWN_EVENT_TYPES = frozenset({"chunk", "retract_chunk", "error"})
 
 
@@ -489,6 +504,7 @@ async def chat_stream(
                     "LITEMAAS_ADMIN_API_KEY": (
                         agent_state.settings.litemaas_admin_api_key if user.is_admin else ""
                     ),
+                    "LITEMAAS_USER_TOKEN": user.raw_token,
                 },
             )
         except Exception:
@@ -607,7 +623,7 @@ async def _stream_response(
                         )
                     else:
                         continue
-                    if not content:
+                    if not content or not content.strip():
                         continue
 
                     chunk_with_ctx = buffer.add(content)
@@ -641,11 +657,23 @@ async def _stream_response(
             yield _done_event(conversation_id)
             return
 
-        safety_notice = (
-            "Part of this response has been removed for safety reasons."
-            if retracted_indices
-            else None
-        )
-        yield _done_event(conversation_id, safety_notice)
+        emitted_count = chunk_index - len(retracted_indices)
+        if emitted_count == 0 and chunk_index > 0:
+            # Every chunk was retracted — send a safety notice
+            safety_notice = "Part of this response has been removed for safety reasons."
+            yield _done_event(conversation_id, safety_notice)
+        elif emitted_count == 0:
+            # No chunks at all (empty agent response) — send a friendly fallback
+            logger.warning("Empty agent stream for user %s — sending fallback", user.user_id)
+            event = _json_event("chunk", _EMPTY_RESPONSE_FALLBACK, chunk_index)
+            yield f"data: {event}\n\n"
+            yield _done_event(conversation_id)
+        else:
+            safety_notice = (
+                "Part of this response has been removed for safety reasons."
+                if retracted_indices
+                else None
+            )
+            yield _done_event(conversation_id, safety_notice)
     finally:
         _secrets_lock.release()

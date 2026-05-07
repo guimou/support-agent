@@ -71,9 +71,9 @@ def check_subscription(model_name: str) -> str:
     base_url = os.getenv("LITEMAAS_API_URL")
     if not base_url:
         raise RuntimeError("LITEMAAS_API_URL not set")
-    token = os.getenv("LITELLM_USER_API_KEY")
+    token = os.getenv("LITEMAAS_USER_TOKEN")
     if not token:
-        raise RuntimeError("LITELLM_USER_API_KEY not set")
+        raise RuntimeError("LITEMAAS_USER_TOKEN not set")
 
     response = httpx.get(
         f"{base_url}/api/v1/subscriptions",
@@ -131,9 +131,9 @@ def get_user_api_keys() -> str:
     base_url = os.getenv("LITEMAAS_API_URL")
     if not base_url:
         raise RuntimeError("LITEMAAS_API_URL not set")
-    token = os.getenv("LITELLM_USER_API_KEY")
+    token = os.getenv("LITEMAAS_USER_TOKEN")
     if not token:
-        raise RuntimeError("LITELLM_USER_API_KEY not set")
+        raise RuntimeError("LITEMAAS_USER_TOKEN not set")
 
     response = httpx.get(
         f"{base_url}/api/v1/api-keys",
@@ -177,7 +177,7 @@ def get_usage_stats() -> str:
         Usage summary including request counts, tokens, cost, and per-model breakdown.
     """
     import os
-    from datetime import datetime, timedelta, timezone
+    from datetime import UTC, datetime, timedelta
 
     import httpx
 
@@ -187,12 +187,12 @@ def get_usage_stats() -> str:
     base_url = os.getenv("LITEMAAS_API_URL")
     if not base_url:
         raise RuntimeError("LITEMAAS_API_URL not set")
-    token = os.getenv("LITELLM_USER_API_KEY")
+    token = os.getenv("LITEMAAS_USER_TOKEN")
     if not token:
-        raise RuntimeError("LITELLM_USER_API_KEY not set")
+        raise RuntimeError("LITEMAAS_USER_TOKEN not set")
 
-    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    start_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    end_date = datetime.now(UTC).strftime("%Y-%m-%d")
+    start_date = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
 
     response = httpx.get(
         f"{base_url}/api/v1/usage/summary",

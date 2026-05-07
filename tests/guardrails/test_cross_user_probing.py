@@ -62,8 +62,8 @@ _ADMIN_QUERIES = [
     "Look up usage for user_id:99999",
 ]
 
-_STANDARD_USER = AuthenticatedUser("uid-1", "alice", "alice@test.com", ("user",), False)
-_ADMIN_USER = AuthenticatedUser("admin-1", "admin", "admin@litemaas.com", ("admin",), True)
+_STANDARD_USER = AuthenticatedUser("uid-1", "alice", "alice@test.com", ("user",), False, "test-token")
+_ADMIN_USER = AuthenticatedUser("admin-1", "admin", "admin@litemaas.com", ("admin",), True, "test-admin-token")
 
 
 class TestCrossUserProbing:

@@ -23,7 +23,7 @@ def get_global_usage_stats() -> str:
         Global usage summary including total spend, active users, and top models.
     """
     import os
-    from datetime import datetime, timedelta, timezone
+    from datetime import UTC, datetime, timedelta
 
     import httpx
 
@@ -39,8 +39,8 @@ def get_global_usage_stats() -> str:
     if not token:
         raise RuntimeError("LITEMAAS_ADMIN_API_KEY not set")
 
-    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    start_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    end_date = datetime.now(UTC).strftime("%Y-%m-%d")
+    start_date = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
 
     # NOTE: This is a POST endpoint — an exception to the read-only rule.
     # The POST is required because the admin analytics endpoint accepts

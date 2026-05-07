@@ -69,7 +69,7 @@ _ALLOWED_INPUT_CHECK_OUTPUT = [
     "What are the usage limits for my current plan?",
 ]
 
-_STANDARD_USER = AuthenticatedUser("uid-1", "alice", "alice@test.com", ("user",), False)
+_STANDARD_USER = AuthenticatedUser("uid-1", "alice", "alice@test.com", ("user",), False, "test-token")
 
 
 class TestIndirectProbing:

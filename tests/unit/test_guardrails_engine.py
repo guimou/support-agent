@@ -37,6 +37,7 @@ def mock_user():
         email="alice@example.com",
         roles=("user",),
         is_admin=False,
+        raw_token="test-token",
     )
 
 
