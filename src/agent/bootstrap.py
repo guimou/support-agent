@@ -84,7 +84,7 @@ def _register_memory_tools(client: Letta, agent_id: str, tool_ids: dict[str, str
         logger.info("Registered memory tool: %s (id=%s)", tool.name, tool.id)
 
 
-SEED_VERSION_MARKER = "litemaas-seed-version:1"
+SEED_VERSION_MARKER = "litemaas-seed-version:2"
 
 
 def _seed_archival_memory(client: Letta, agent_id: str) -> None:

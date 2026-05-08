@@ -3,41 +3,40 @@
 from __future__ import annotations
 
 ARCHIVAL_SEEDS: list[str] = [
-    # Model access troubleshooting
-    """FAQ: Why can't I access a model?
-Common causes:
-1. Model requires restricted access approval — check subscription status for 'pending' or 'denied'
-2. Model is inactive — admin has disabled it
-3. Budget exhausted — check spend vs maxBudget on your API key
-4. API key expired — check expiresAt field
-5. API key revoked — check revokedAt field
-6. Rate limit exceeded — check RPM/TPM limits
-Diagnostic order: subscription status → API key status → budget → rate limits""",
-    # API key troubleshooting
-    """FAQ: My API key stopped working
-Diagnostic steps:
-1. Check if key is active (isActive=true, revokedAt=null)
-2. Check budget: currentSpend vs maxBudget — budget exhaustion is the #1 cause
-3. Check expiration: expiresAt field
-4. Check sync status: syncStatus should be 'synced', not 'error'
-5. Check model access: the key's 'models' array must include the model you're using
-6. Budget duration matters: 'monthly' budgets reset on the 1st""",
-    # Subscription management
-    """FAQ: How do subscriptions work?
-- Users subscribe to models to get access
-- Non-restricted models: subscription is immediate (status=active)
-- Restricted models: subscription goes to 'pending', admin must approve
-- Quotas: requests and tokens have separate limits
-- Utilization: check utilizationPercent for quick read (0-100)
-- Reset: quota resets at the time specified in resetAt field
-- Null quotas mean unlimited""",
-    # Platform overview
-    """Platform Overview: LiteMaaS
-LiteMaaS is an AI model management platform that provides:
-- Model catalog with multiple providers (OpenAI, Anthropic, etc.)
-- Subscription-based access control with per-model quotas
-- API key management with budget controls
-- Usage tracking and analytics
-- Admin tools for user and subscription management
-The platform uses LiteLLM as a proxy for model routing.""",
+    # --- Core Concepts ---
+    """Subscriptions: A subscription is a relationship between a user and a model. Each user can have at most one subscription per model. Subscribing expresses intent to use a model, but does not grant API access by itself — the user must also create an API key that includes that model. If a user cancels and re-subscribes, the existing subscription record is reactivated (not duplicated).""",
+    """Subscription Statuses:
+- active: approved and operational, user can add model to API keys
+- pending: awaiting admin approval (restricted access models only)
+- denied: admin rejected the request, includes a reason; user can click "Request Review" to retry
+- inactive: user cancelled the subscription; record is preserved, hidden by default
+- suspended: temporarily disabled by admin; no permanent action taken
+- cancelled: legacy status, rarely seen; normal cancellation sets "inactive" not "cancelled"
+- expired: past its expiration date, user must create a new subscription""",
+    """Restricted Access: A flag an admin sets on a model. Subscribing to a restricted model creates a "pending" subscription that requires admin approval before the user can add the model to an API key. When an admin marks an already-available model as restricted, all active subscriptions cascade to "pending" and the model is removed from all API keys. The reverse is asymmetric: lifting the restriction silently activates pending subscriptions, but users must manually re-add the model to their keys.""",
+    """API Keys: A credential (prefixed sk-litellm-) that allows a user to make API calls to one or more models through LiteLLM. Each key has its own budget and rate limits. The full key value is shown exactly once at creation and cannot be retrieved again — only a masked prefix is stored (first 8 + last 4 characters). Keys are hashed with SHA-256 in the database. Key statuses: active, revoked (soft-delete with audit trail), permanently deleted (admin-only, irreversible), expired.""",
+    """Models: An AI model configuration available through the platform. Models have a display name (visible to users) and a backend model name (used by LiteLLM). Types: Chat, Embeddings, Document Conversion (uses /docling/v1 endpoint instead of /v1), and Tokenize. Models can be active (available) or inactive (hidden from users). Capability labels: Chat (blue), Embeddings (green), Tokenize (orangered), Document Conversion (orange), Vision (teal), Function Calling (purple), Tool Choice (grey).""",
+    """Budgets and Rate Limits: Max budget is the spending ceiling per period — null means unlimited, zero means no spending allowed. Budget duration can be daily, weekly, monthly, yearly, or custom LiteLLM strings like "30d" or "1h". Current spend is fetched from LiteLLM in real time (falls back to a stale cache if LiteLLM is unavailable). Soft budget is a warning threshold that triggers a notification but does not block calls. TPM (tokens per minute) and RPM (requests per minute) are rate limits enforced by LiteLLM. The sentinel value 2147483647 means "unlimited" for TPM/RPM.""",
+    """Sync Status: Indicates whether a resource is synchronized between LiteMaaS and LiteLLM. Values: "synced" (everything matches), "pending" (changes not yet pushed), "error" (sync failed, will be retried). A sync error does not necessarily mean the resource is broken. LiteLLM sync failures are generally non-fatal — operations succeed locally with a warning. Exception: access revocation updates LiteLLM first (security-first pattern); if that fails, the local change may be skipped to avoid granting access the database says is revoked.""",
+    """Quotas (Subscription Level): Subscriptions track request and token quotas separately from budgets. These are integer counters (used requests vs quota requests, used tokens vs quota tokens) measuring volume rather than cost. Quotas reset on the first of each month. Null quotas mean unlimited. Utilization percentage is available for quick reads (0-100).""",
+    # --- Workflows ---
+    """Workflow — Subscribing to a Model: For regular models, click Subscribe and access is immediate (status=active). For restricted models (shown with orange badge and lock icon), click "Request Access" — subscription goes to "pending" and the user must wait for admin approval. Even after approval, the user still needs to create or update an API key to include the model. If denied, the user can click "Request Review" to re-enter the approval queue.""",
+    """Workflow — Creating an API Key: User provides a name, selects models from active subscriptions only, and optionally sets expiration and quotas (max budget, budget duration, TPM, RPM). Admin-configured defaults pre-fill the form; admin-configured maximums constrain values. Per-model limits (budget, TPM, RPM) can also be set. The full key is shown once at creation. If an admin creates a key for a user, active subscriptions are automatically created for any selected models (bypassing restricted access approval).""",
+    """Workflow — Cancelling a Subscription: Setting status to "inactive" (not "cancelled" or deleted). The cancelled model is removed from every API key the user has. If any key has no remaining models, that key is automatically deactivated. Changes are pushed to LiteLLM immediately. The subscription record is preserved for potential reactivation.""",
+    """Workflow — Admin Operations: Admins can approve/deny restricted model requests (bulk operations supported). Denial requires a reason and removes the model from the user's API keys first (security-first). Admins can manage any user's budget, rate limits, API keys, and subscriptions. When an admin creates a key for a user, subscriptions are auto-created, bypassing restricted access. Admins can also trigger manual model sync with LiteLLM, manage backups, configure system settings (quotas, currency, branding, banners), and view the full audit log.""",
+    # --- Troubleshooting ---
+    """Troubleshooting — API calls failing: Check in this order: (1) API key active? May be revoked, expired, or auto-deactivated because all its models were removed. (2) Model still in key's model list? May have been removed by subscription cancellation or restriction cascade. (3) Budget exceeded? Current spend >= max budget blocks all calls until reset. (4) Rate limits hit? Check TPM/RPM. (5) Model still active? Admin may have deactivated it. (6) Sync status? "error" means key may not be registered in LiteLLM.""",
+    """Troubleshooting — Can't see a model: (1) Model is inactive — admins can deactivate models, hiding them from the catalog. (2) Model was deleted — cascades to delete all subscriptions and remove from keys. (3) Filters hiding it — suggest clearing search, provider, and category filters. (4) Not synced yet — new LiteLLM models appear after sync; admin can trigger manual sync.""",
+    """Troubleshooting — Subscribed but can't use model: Most likely the model has restricted access and the subscription is "pending" or "denied". Check the subscriptions page. If pending, wait for admin approval. If denied, use "Request Review". Even after approval, user must create/update an API key to include the model. Also check that the correct API base path is used — document conversion models use /docling/v1, not /v1.""",
+    """Troubleshooting — Budget shows wrong numbers: (1) Brief delay between API calls and spend updates (real-time fetch from LiteLLM). (2) If LiteLLM unavailable, cached value may be stale. (3) Budget duration matters — spend resets each period, so a low number after a reset is normal. (4) Check configured display currency (admin setting). (5) Admin usage data: historical days are permanently cached, current day refreshes every 5 minutes; admin can force refresh.""",
+    """Troubleshooting — API key not working: (1) Sync status "error" means LiteLLM didn't register the key. (2) User may have lost the key value — shown only once at creation. (3) Key may have already expired. (4) Wrong API base URL — chat models use /v1, document conversion uses /docling/v1.""",
+    """Troubleshooting — Subscription disappeared or changed to pending: Inactive (cancelled) subscriptions are hidden by default — the record still exists. If a subscription changed from active to pending, an admin marked the model as restricted, triggering a cascade: all active subscriptions move to pending and the model is removed from all API keys. User must wait for re-approval, then manually re-add the model to keys.""",
+    # --- API Quirks ---
+    """API Key Quota Hierarchy: Three levels of limits apply: global key limits (max budget, TPM, RPM), per-model limits (model-specific budget, TPM, RPM within a key), and user-level limits. The most restrictive limit wins. Example: a per-model RPM of 10 on a key with global RPM of 100 means that model is limited to 10 RPM.""",
+    """Budget Utilization Calculation: Computed as (currentSpend / maxBudget) * 100. If max budget is null or zero, utilization is undefined. Frontend color coding: green below 80%, warning (yellow/orange) at 80-95%, danger (red) above 95%.""",
+    """Admin Expiration Constraints: Admins can configure a maximum expiration period for API keys. When set, "Never expires" disappears from the creation form. Existing keys created before the maximum was configured are not retroactively affected.""",
+    # --- Roles ---
+    """User Roles: Regular users can only manage their own data — browse models, subscribe, create/manage their own API keys, view personal usage. Administrators have full system control — manage any user, approve/deny requests, configure settings, view audit logs, manage backups. AdminReadonly sees the same pages as admins but all modification controls are disabled — designed for compliance monitoring and demos.""",
+    # --- Platform ---
+    """Platform Overview: LiteMaaS is an AI model management platform providing a model catalog with multiple providers, subscription-based access control with per-model quotas, API key management with budget controls, usage tracking and analytics, and admin tools for user and subscription management. It uses LiteLLM as a proxy for model routing. The default team in LiteLLM has an empty allowed_models list, which counterintuitively means all models are allowed (not none).""",
 ]

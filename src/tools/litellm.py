@@ -99,10 +99,23 @@ def get_model_info(model_name: str = "") -> str:
         max_t = info.get("max_tokens")
         tpm = params.get("tpm")
         rpm = params.get("rpm")
+
+        input_cost = info.get("input_cost_per_token")
+        output_cost = info.get("output_cost_per_token")
+        if input_cost is not None:
+            input_price = f"${input_cost * 1_000_000:.2f}/M tokens"
+        else:
+            input_price = "not set"
+        if output_cost is not None:
+            output_price = f"${output_cost * 1_000_000:.2f}/M tokens"
+        else:
+            output_price = "not set"
+
         lines.append(
             f"Model: {m.get('model_name', 'unknown')}\n"
             f"  Provider: {params.get('custom_llm_provider', 'unknown')}\n"
             f"  Backend: {params.get('model', 'unknown')}\n"
+            f"  Pricing: input {input_price} | output {output_price}\n"
             f"  Max tokens: {fmt.get(max_t) or ('not set' if max_t is None else f'{max_t:,}')}\n"
             f"  TPM: {fmt.get(tpm) or ('not set' if tpm is None else f'{tpm:,}')} | "
             f"RPM: {fmt.get(rpm) or ('not set' if rpm is None else f'{rpm:,}')}\n"
